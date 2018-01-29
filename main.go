@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"html/template"
 	"log"
 	"net/http"
@@ -11,16 +10,15 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
+	"github.com/Diminho/MK_practice/config"
+	"github.com/Diminho/MK_practice/models"
 	"github.com/gorilla/websocket"
 )
 
-type EventPlaces struct {
-	Event          string   `json:"event"`
-	BookedPlaces   []string `json:"places"`
-	LastActedPlace string   `json:"lastActedPlace"`
-	Action         string   `json:"action"`
-	UserAddr       string   `json:"userAddr"`
-	ErrorCode      int      `json:"errorCode"`
+type App struct {
+	db           models.Database
+	broadcast    chan models.EventPlaces
+	eventClients map[string][]*websocket.Conn
 }
 
 type EventSystemMessage struct {
@@ -30,21 +28,6 @@ type EventSystemMessage struct {
 	LastActedPlace string `json:"lastActedPlace"`
 }
 
-type EventPlacesRow struct {
-	PlaceIdentity string
-	IsBooked      int
-	IsBought      int
-	UserID        string
-}
-
-type EventPlacesTemplate struct {
-	EventPlacesRows []EventPlacesRow
-	EventID         int
-}
-
-var eventClients = make(map[string][]*websocket.Conn)
-var broadcast = make(chan EventPlaces)
-
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -52,25 +35,27 @@ var upgrader = websocket.Upgrader{
 }
 
 //not the best practice to use global, but left for simplicity
-var db *sql.DB
 
 var mu = &sync.Mutex{}
 
 func main() {
-	var dbErr error
-	db, dbErr = sql.Open("mysql", "root:@/ticket_booking")
+	db, dbErr := models.Connect(config.User, config.Host, config.DbName)
 	if dbErr != nil {
-		log.Fatal(dbErr)
+		log.Panic(dbErr)
 	}
 
-	defer db.Close()
+	app := &App{
+		db:           db,
+		eventClients: make(map[string][]*websocket.Conn),
+		broadcast:    make(chan models.EventPlaces),
+	}
 
-	fs := http.FileServer(http.Dir("../public"))
+	fs := http.FileServer(http.Dir("./public"))
 	http.Handle("/", fs)
 
-	http.HandleFunc("/ws", handleConnections)
-	http.HandleFunc("/event", handleEvent)
-	go handlePlaceBookings()
+	http.HandleFunc("/ws", app.handleConnections)
+	http.HandleFunc("/event", app.handleEvent)
+	go app.handlePlaceBookings()
 
 	log.Println("Server started. Port: 8000")
 	err := http.ListenAndServe(":8000", nil)
@@ -80,11 +65,11 @@ func main() {
 
 }
 
-func handleEvent(w http.ResponseWriter, r *http.Request) {
-	populateTemplate(queryForAllPlacesInEvent(), w, "../public/event.html")
+func (app *App) handleEvent(w http.ResponseWriter, r *http.Request) {
+	populateTemplate(app.db.QueryForAllPlacesInEvent(), w, "public/event.html")
 }
 
-func handleConnections(w http.ResponseWriter, r *http.Request) {
+func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 	wsConnection, err := upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
@@ -99,24 +84,24 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	event := string(message)
 
-	clients, ok := eventClients[event]
+	clients, ok := app.eventClients[event]
 
 	if !ok {
 		client := []*websocket.Conn{wsConnection}
-		eventClients[event] = client
+		app.eventClients[event] = client
 	} else {
 		clients = append(clients, wsConnection)
-		eventClients[event] = clients
+		app.eventClients[event] = clients
 	}
 
 	// Defering here since we have defined eventClients for this particular connection
 	defer func() {
-		deleteClient(eventClients[event], indexOfClient(wsConnection, eventClients[event]))
+		deleteClient(app.eventClients[event], indexOfClient(wsConnection, app.eventClients[event]))
 		wsConnection.Close()
 	}()
 
 	for {
-		var places EventPlaces
+		var places models.EventPlaces
 		//imagine data is not corrupted or mixed up
 		erro := wsConnection.ReadJSON(&places)
 		if erro != nil {
@@ -125,10 +110,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		mu.Lock()
-		code := processPlace(places.LastActedPlace, places.Action, wsConnection.RemoteAddr().String())
+		code := app.db.ProcessPlace(places.LastActedPlace, places.Action, wsConnection.RemoteAddr().String())
 		mu.Unlock()
 		places.ErrorCode = code
-		occupied := queryForOccupiedPlacesInEvent()
+		occupied := app.db.QueryForOccupiedPlacesInEvent()
 
 		for _, occupiedPlace := range occupied {
 			if !inStringSlice(places.BookedPlaces, occupiedPlace.PlaceIdentity) {
@@ -138,13 +123,13 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		places.UserAddr = wsConnection.RemoteAddr().String()
 
-		broadcast <- places
+		app.broadcast <- places
 	}
 }
 
-func handlePlaceBookings() {
-	for places := range broadcast {
-		for _, client := range eventClients[places.Event] {
+func (app *App) handlePlaceBookings() {
+	for places := range app.broadcast {
+		for _, client := range app.eventClients[places.Event] {
 			if places.UserAddr == client.RemoteAddr().String() {
 				er := client.WriteJSON(getEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
 

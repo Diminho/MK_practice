@@ -1,22 +1,43 @@
-package main
+package models
 
 import "log"
 
-func queryForOccupiedPlacesInEvent() []EventPlacesRow {
+type EventPlaces struct {
+	Event          string   `json:"event"`
+	BookedPlaces   []string `json:"places"`
+	LastActedPlace string   `json:"lastActedPlace"`
+	Action         string   `json:"action"`
+	UserAddr       string   `json:"userAddr"`
+	ErrorCode      int      `json:"errorCode"`
+}
+
+type EventPlacesRow struct {
+	PlaceIdentity string
+	IsBooked      int
+	IsBought      int
+	UserID        string
+}
+
+type EventPlacesTemplate struct {
+	EventPlacesRows []EventPlacesRow
+	EventID         int
+}
+
+func(db *DB) QueryForOccupiedPlacesInEvent() []EventPlacesRow {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places where isBooked = 1 OR isBought = 1"
-	event := queryEvent(sqlStatement)
+	event := queryEvent(sqlStatement, db)
 
 	return event.EventPlacesRows
 }
 
-func queryForAllPlacesInEvent() EventPlacesTemplate {
+func (db *DB) QueryForAllPlacesInEvent() EventPlacesTemplate {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places"
-	event := queryEvent(sqlStatement)
+	event := queryEvent(sqlStatement, db)
 
 	return event
 }
 
-func queryEvent(sqlStatement string) EventPlacesTemplate {
+func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
 	rows, err := db.Query(sqlStatement)
 
 	if err != nil {
@@ -46,7 +67,7 @@ func queryEvent(sqlStatement string) EventPlacesTemplate {
 	return templateRows
 }
 
-func processPlace(placeID string, action string, user string) int {
+func (db *DB) ProcessPlace(placeID string, action string, user string) int {
 	var sqlStatement string
 	var isBooked int
 
