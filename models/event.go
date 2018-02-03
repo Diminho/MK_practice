@@ -1,6 +1,12 @@
 package models
 
-import "log"
+import (
+	"log"
+	"net/http"
+	"strings"
+)
+
+const BookTime int = 60
 
 type EventPlaces struct {
 	Event          string   `json:"event"`
@@ -21,9 +27,11 @@ type EventPlacesRow struct {
 type EventPlacesTemplate struct {
 	EventPlacesRows []EventPlacesRow
 	EventID         int
+	Request         *http.Request
+	UserInfo        map[string]string
 }
 
-func(db *DB) QueryForOccupiedPlacesInEvent() []EventPlacesRow {
+func (db *DB) QueryForOccupiedPlacesInEvent() []EventPlacesRow {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places where isBooked = 1 OR isBought = 1"
 	event := queryEvent(sqlStatement, db)
 
@@ -33,7 +41,7 @@ func(db *DB) QueryForOccupiedPlacesInEvent() []EventPlacesRow {
 func (db *DB) QueryForAllPlacesInEvent() EventPlacesTemplate {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places"
 	event := queryEvent(sqlStatement, db)
-
+	event.UserInfo = make(map[string]string)
 	return event
 }
 
@@ -67,17 +75,38 @@ func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
 	return templateRows
 }
 
-func (db *DB) ProcessPlace(placeID string, action string, user string) int {
+func (db *DB) ProcessPlace(places *EventPlaces, user string) int {
 	var sqlStatement string
 	var isBooked int
 
-	switch action {
+	switch places.Action {
 	case "buy":
-		sqlStatement = "UPDATE event_places set isBought = 1 WHERE placeIdentity = ?"
+		sqlStatement = "UPDATE event_places set isBought = 1, isBooked = 0 WHERE placeIdentity = ?"
+	case "rejected_timeout":
+
+		args := make([]interface{}, len(places.BookedPlaces))
+		for i, id := range places.BookedPlaces {
+			args[i] = id
+		}
+
+		sqlStatement = "UPDATE event_places set isBooked = 0, userId = ''  WHERE placeIdentity IN(?" + strings.Repeat(",?", len(args)-1) + ")"
+		stmt, err := db.Prepare(sqlStatement)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = stmt.Exec(args...)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		places.BookedPlaces = []string{}
+
+		return 0
 	case "unbook":
-		sqlStatement = "UPDATE event_places set isBooked = 0 WHERE placeIdentity = ?"
+		sqlStatement = "UPDATE event_places set isBooked = 0, userId = '' WHERE placeIdentity = ?"
 	case "book":
-		err := db.QueryRow("SELECT isBooked FROM event_places WHERE placeIdentity = ?", placeID).Scan(&isBooked)
+		err := db.QueryRow("SELECT isBooked FROM event_places WHERE placeIdentity = ?", places.LastActedPlace).Scan(&isBooked)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -86,7 +115,7 @@ func (db *DB) ProcessPlace(placeID string, action string, user string) int {
 			//1 - code error - is a booked earlier by other user
 			return 1
 		}
-		sqlStatement = "UPDATE event_places set isBooked = 1, userId = '" + user[6:] + "' WHERE placeIdentity = ?"
+		sqlStatement = "UPDATE event_places set isBooked = 1, userId = '" + user + "' WHERE placeIdentity = ?"
 	}
 
 	stmt, err := db.Prepare(sqlStatement)
@@ -95,7 +124,7 @@ func (db *DB) ProcessPlace(placeID string, action string, user string) int {
 		log.Fatal(err)
 	}
 
-	_, err = stmt.Exec(placeID)
+	_, err = stmt.Exec(places.LastActedPlace)
 
 	if err != nil {
 		log.Fatal(err)

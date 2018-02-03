@@ -3,8 +3,10 @@ $(document).ready(function() {
     var selectedItems = [];
     var event = {}
     var socket;
+    var timerStarted = false;
     //to be changed - dummy
     var event_id = "test_event";
+    var nIntervId;
     init();
 
 
@@ -12,35 +14,28 @@ $(document).ready(function() {
         var id = $(this).attr('id');
 
         if (!$(this).hasClass('selected')) {
-            $(this).addClass('selected');
-            selectedItems.push(id)
-            event["action"] = "book";
-        } else {
-            $(this).removeClass('selected');
-            removeItem(selectedItems, id);
-            event["action"] = "unbook";
-        }
+            processEventItem("book", id)
 
-        displayItems()
-        event["places"] = selectedItems;
-        event["lastActedPlace"] = id;
+
+        } else {
+            processEventItem("unbook", id)
+
+        }
         sendMessage(JSON.stringify(event))
     })
 
     $(document).on('click', '.remove-item', function() {
-        var id = $(this).siblings('.item-id').text();
-        removeItem(selectedItems, id);
-        displayItems();
-        event["places"] = selectedItems;
-        event["lastActedPlace"] = id;
-        event["action"] = "unbook";
+
+        processEventItem("unbook", $(this).siblings('.item-id').text())
         sendMessage(JSON.stringify(event))
-        $('#' + id).removeClass('selected');
+
     })
 
     $(document).on('click', '#buy-places', function() {
         event.action = "buy";
         sendMessage(JSON.stringify(event))
+        stopTimer()
+        alert("Congrats!")
     })
 
     ////FUNCTIONS =====================================
@@ -69,10 +64,18 @@ $(document).ready(function() {
         }
 
         socket.onmessage = function(event) {
-            console.log(event)
             var data = JSON.parse(event.data);
-            if ((data.hasOwnProperty('errorCode') && data.errorCode != 0) || (data.hasOwnProperty('sysMessage') && data.messageType == 0)) {
+
+            if ((data.hasOwnProperty('errorCode') && data.errorCode != 0)) {
                 return false;
+            }
+
+            if (data.hasOwnProperty('sysMessage') && data.messageType == 0) {
+                if (!timerStarted && selectedItems.length != 0) {
+                    startTimer(data.bookTime, $('#time'));
+                    timerStarted = true;
+                }
+                return false
             }
 
             if (data.hasOwnProperty('sysMessage') && data.messageType == 1) {
@@ -107,4 +110,64 @@ $(document).ready(function() {
         event["action"] = "";
         initConnection();
     }
-});
+
+    function startTimer(duration, display) {
+        var timer = duration,
+            minutes, seconds;
+        nIntervId = setInterval(function() {
+            minutes = parseInt(timer / 60, 10);
+            seconds = parseInt(timer % 60, 10);
+
+            minutes = minutes < 10 ? "0" + minutes : minutes;
+            seconds = seconds < 10 ? "0" + seconds : seconds;
+
+            display.text(minutes + ":" + seconds);
+            if (--timer < 0) {
+                event["action"] = "rejected_timeout"
+
+                sendMessage(JSON.stringify(event))
+
+                $.each(selectedItems, function(index, value) {
+                    $('#' + value).removeClass('selected');
+                });
+
+                selectedItems = [];
+                displayItems()
+                event["places"] = selectedItems;
+                stopTimer();
+                return false;
+            }
+        }, 1000);
+    }
+
+    function stopTimer() {
+        clearInterval(nIntervId);
+        $('#time').empty();
+        timerStarted = false;
+    }
+
+    function processEventItem(action, id) {
+        $('#' + id).toggleClass('selected');
+
+        if (action === "book") {
+            selectedItems.push(id)
+        } else if (action === "unbook") {
+            removeItem(selectedItems, id);
+
+            if (selectedItems.length == 0) {
+                stopTimer();
+            }
+        }
+
+        displayItems();
+        event["places"] = selectedItems;
+        event["lastActedPlace"] = id;
+        event["action"] = action;
+
+        if ($('#userLoggedStatus').val() == 1 && selectedItems.length > 0) {
+            $('#buy-places').attr('disabled', false)
+        } else {
+            $('#buy-places').attr('disabled', true)
+        }
+    }
+})

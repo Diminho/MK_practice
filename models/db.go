@@ -9,7 +9,10 @@ import (
 type Database interface {
 	QueryForOccupiedPlacesInEvent() []EventPlacesRow
 	QueryForAllPlacesInEvent() EventPlacesTemplate
-	ProcessPlace(string, string, string) int
+	ProcessPlace(*EventPlaces, string) int
+	CheckIfUserExists(string) bool
+	AddNewUser(*User) error
+	FindUserByEmail(string) (User, error)
 }
 
 type DB struct {

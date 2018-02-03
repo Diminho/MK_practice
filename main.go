@@ -1,24 +1,35 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
+	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/Diminho/MK_practice/config"
 	"github.com/Diminho/MK_practice/models"
+	"github.com/Diminho/MK_practice/simplelog"
+	logjson "github.com/Diminho/MK_practice/simplelog/handlers/json"
 	"github.com/gorilla/websocket"
+	"golang.org/x/oauth2"
 )
 
 type App struct {
-	db           models.Database
-	broadcast    chan models.EventPlaces
-	eventClients map[string][]*websocket.Conn
+	db             models.Database
+	broadcast      chan models.EventPlaces
+	eventClients   map[string][]*websocket.Conn
+	facebookState  string
+	facebookConfig *oauth2.Config
 }
 
 type EventSystemMessage struct {
@@ -26,6 +37,7 @@ type EventSystemMessage struct {
 	MessageType    int    `json:"messageType"`
 	Event          string `json:"event"`
 	LastActedPlace string `json:"lastActedPlace"`
+	BookTime       int    `json:"bookTime"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -34,39 +46,136 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-//not the best practice to use global, but left for simplicity
-
 var mu = &sync.Mutex{}
 
 func main() {
-	db, dbErr := models.Connect(config.User, config.Host, config.DbName)
-	if dbErr != nil {
-		log.Panic(dbErr)
-	}
 
-	app := &App{
-		db:           db,
-		eventClients: make(map[string][]*websocket.Conn),
-		broadcast:    make(chan models.EventPlaces),
-	}
-
-	fs := http.FileServer(http.Dir("./public"))
-	http.Handle("/", fs)
-
-	http.HandleFunc("/ws", app.handleConnections)
-	http.HandleFunc("/event", app.handleEvent)
-	go app.handlePlaceBookings()
-
-	log.Println("Server started. Port: 8000")
-	err := http.ListenAndServe(":8000", nil)
+	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatal("Failed to open log file: ", err)
 	}
+	defer file.Close()
+
+	logger := simplelog.NewLogger(file)
+	logger.SetHandler(logjson.New(logger))
+	logger.WithFields(simplelog.Fields{"user": "Dima", "file": "kaboom.txt"}).Info("FIRST")
+
+	// db, dbErr := models.Connect(config.User, config.Host, config.DbName)
+	// if dbErr != nil {
+	// 	log.Panic(dbErr)
+	// }
+
+	// app := &App{
+	// 	db:           db,
+	// 	eventClients: make(map[string][]*websocket.Conn),
+	// 	broadcast:    make(chan models.EventPlaces),
+	// 	facebookConfig: &oauth2.Config{
+	// 		ClientID:     config.ClientID,
+	// 		ClientSecret: config.ClientSecret,
+	// 		RedirectURL:  config.RedirectURL,
+	// 		Scopes:       config.Scopes,
+	// 		Endpoint:     config.Endpoint,
+	// 	},
+	// 	facebookState: "MK_PRACTICE",
+	// }
+
+	// fs := http.FileServer(http.Dir("./public"))
+	// http.Handle("/", fs)
+
+	// http.HandleFunc("/ws", app.handleConnections)
+	// http.HandleFunc("/event", app.handleEvent)
+	// http.HandleFunc("/facebook_login", app.handleFacebookLogin)
+	// http.HandleFunc("/facebookCallback", app.handleFacebookCallback)
+	// go app.handlePlaceBookings()
+
+	// log.Println("Server started. Port: 8000")
+	// err := http.ListenAndServe(":8000", nil)
+	// if err != nil {
+	// 	log.Fatal("ListenAndServe: ", err)
+	// }
 
 }
 
+func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.FormValue("state")
+	if state != app.facebookState {
+		fmt.Printf("invalid oauth state, expected '%s', got '%s'\n", app.facebookState, state)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	code := r.FormValue("code")
+
+	token, err := app.facebookConfig.Exchange(oauth2.NoContext, code)
+	if err != nil {
+		fmt.Printf("oauthConf.Exchange() failed with '%s'\n", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	resp, err := http.Get("https://graph.facebook.com/me?fields=email,name,id&access_token=" +
+		url.QueryEscape(token.AccessToken))
+	if err != nil {
+		fmt.Printf("Get: %s\n", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+	defer resp.Body.Close()
+
+	response, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("ReadAll: %s\n", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+	var user models.User
+	json.Unmarshal(response, &user)
+	fmt.Println(user)
+	if !app.db.CheckIfUserExists(user.Email) {
+		app.db.AddNewUser(&user)
+
+	}
+
+	expiration := time.Now().Add(60 * time.Second)
+	//Warning! used to set email in Cookie just for simplicity.
+	cookie := http.Cookie{Name: "ticket_booking", Value: user.Email, Expires: expiration}
+	http.SetCookie(w, &cookie)
+
+	http.Redirect(w, r, r.Referer(), http.StatusTemporaryRedirect)
+}
+
+func (app *App) handleFacebookLogin(w http.ResponseWriter, r *http.Request) {
+	authURL, err := url.Parse(app.facebookConfig.Endpoint.AuthURL)
+	if err != nil {
+		log.Fatal("Parse: ", err)
+	}
+	parameters := url.Values{}
+	parameters.Add("client_id", app.facebookConfig.ClientID)
+	parameters.Add("scope", strings.Join(app.facebookConfig.Scopes, " "))
+	parameters.Add("redirect_uri", app.facebookConfig.RedirectURL)
+	parameters.Add("response_type", "code")
+	parameters.Add("state", app.facebookState)
+	authURL.RawQuery = parameters.Encode()
+	url := authURL.String()
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
+
 func (app *App) handleEvent(w http.ResponseWriter, r *http.Request) {
-	populateTemplate(app.db.QueryForAllPlacesInEvent(), w, "public/event.html")
+	templateData := app.db.QueryForAllPlacesInEvent()
+	templateData.Request = r
+
+	cookie, ok := isLogged(r)
+	fmt.Println(cookie)
+	if !ok {
+		templateData.UserInfo["isLogged"] = "0"
+	} else {
+		user, _ := app.db.FindUserByEmail(cookie.Value)
+		templateData.UserInfo["isLogged"] = "1"
+		templateData.UserInfo["name"] = user.Name
+		templateData.UserInfo["id"] = user.ID
+	}
+
+	populateTemplate(templateData, w, "public/event.html")
 }
 
 func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -109,8 +218,9 @@ func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		fmt.Println(places)
 		mu.Lock()
-		code := app.db.ProcessPlace(places.LastActedPlace, places.Action, wsConnection.RemoteAddr().String())
+		code := app.db.ProcessPlace(&places, buildUserIdentity(wsConnection.RemoteAddr().String()))
 		mu.Unlock()
 		places.ErrorCode = code
 		occupied := app.db.QueryForOccupiedPlacesInEvent()
@@ -128,8 +238,12 @@ func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handlePlaceBookings() {
+
 	for places := range app.broadcast {
 		for _, client := range app.eventClients[places.Event] {
+			if client == nil {
+				continue
+			}
 			if places.UserAddr == client.RemoteAddr().String() {
 				er := client.WriteJSON(getEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
 
@@ -187,5 +301,20 @@ func getEventSystemMessage(code int, event string, place string) EventSystemMess
 		message = fmt.Sprintf("Sorry, this [%s] have been already booked", place)
 	}
 
-	return EventSystemMessage{Message: message, MessageType: code, Event: event, LastActedPlace: place}
+	return EventSystemMessage{Message: message, MessageType: code, Event: event, LastActedPlace: place, BookTime: models.BookTime}
+}
+
+func buildUserIdentity(remoteAddress string) string {
+	host, port, _ := net.SplitHostPort(remoteAddress)
+	userIdentity := fmt.Sprintf("%s_%s", host, port)
+	return userIdentity
+}
+
+func isLogged(r *http.Request) (*http.Cookie, bool) {
+	var isLogged bool
+	cookie, errorCookie := r.Cookie("ticket_booking")
+	if errorCookie == nil {
+		isLogged = true
+	}
+	return cookie, isLogged
 }
