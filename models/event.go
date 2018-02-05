@@ -31,14 +31,14 @@ type EventPlacesTemplate struct {
 	UserInfo        map[string]string
 }
 
-func (db *DB) QueryForOccupiedPlacesInEvent() []EventPlacesRow {
+func (db *DB) OccupiedPlacesInEvent() []EventPlacesRow {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places where isBooked = 1 OR isBought = 1"
 	event := queryEvent(sqlStatement, db)
 
 	return event.EventPlacesRows
 }
 
-func (db *DB) QueryForAllPlacesInEvent() EventPlacesTemplate {
+func (db *DB) AllPlacesInEvent() EventPlacesTemplate {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places"
 	event := queryEvent(sqlStatement, db)
 	event.UserInfo = make(map[string]string)

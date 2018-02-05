@@ -2,69 +2,23 @@ package simplelog
 
 import (
 	"io"
-	"log"
 	"sync"
 	"time"
 )
 
-var (
-	Trace   *log.Logger
-	Info    *log.Logger
-	Warning *log.Logger
-	Error   *log.Logger
-)
-
 type HandlerFunc func(*Record) error
 
-type Handler interface {
-	HandleLog(*Record) error
-}
+var Now = time.Now
 
-type Logger struct {
-	Mu sync.Mutex // ensures atomic writes; protects the following fields
-	// flag   int        // properties
-	Out     io.Writer // destination for output
-	buf     []byte    // for accumulating text to write
+type Log struct {
+	Mu      sync.Mutex // ensures atomic writes; protects the following fields
+	Out     io.Writer  // destination for output
+	buf     []byte     // for accumulating text to write
 	Handler HandlerFunc
 }
 
-func (logger *Logger) SetHandler(f HandlerFunc) {
-	logger.Handler = f
-}
-
-// type Logger interface {
-// 	Log()
-// }
-
-type Level int
-
-// Log levels.
-const (
-	TraceLevel Level = iota + 1
-	DebugLevel
-	InfoLevel
-	WarnLevel
-	ErrorLevel
-	FatalLevel
-)
-
-var levelNames = [...]string{
-	TraceLevel: "trace",
-	DebugLevel: "debug",
-	InfoLevel:  "info",
-	WarnLevel:  "warn",
-	ErrorLevel: "error",
-	FatalLevel: "fatal",
-}
-
-// String implementation.
-func (l Level) String() string {
-	return levelNames[l]
-}
-
-// MarshalJSON implementation.
-func (l Level) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + l.String() + `"`), nil
+func (l *Log) SetHandler(f HandlerFunc) {
+	l.Handler = f
 }
 
 // Fields represents a map of entry level data used for structured logging.
@@ -72,53 +26,91 @@ type Fields map[string]interface{}
 
 // Record represents a single log entry.
 type Record struct {
-	Logger    *Logger   `json:"-"`
+	Log       *Log      `json:"-"`
 	Level     Level     `json:"level"`
 	Timestamp time.Time `json:"timestamp"`
 	Message   string    `json:"message"`
-	// Fields    []Fields  `json:"fields"`
-	Fields Fields `json:"fields"`
+	Fields    Fields    `json:"fields"`
 }
 
-// var logger = NewLogger(os.Stderr, "")
-var logger *Logger
+var log *Log
 
-// func init()
-
-func NewLogger(out io.Writer) *Logger {
-	return &Logger{Out: out}
+func NewLog(out io.Writer) *Log {
+	return &Log{Out: out}
 }
 
-func NewRecord(logger *Logger) *Record {
+func NewRecord(l *Log) *Record {
 	return &Record{
-		Logger: logger,
+		Log:    l,
+		Fields: Fields{},
 	}
 }
 
-// func (logger *Logger) WithField(key string, value interface{}) *Record {
-// 	record.Fields = Fields{key: value}
-// 	return record
-// }
+func (l *Log) WithField(key string, value interface{}) *Record {
+	record := l.WithFields(Fields{key: value})
+	return record
+}
 
-func (logger *Logger) WithFields(fields Fields) *Record {
+func (l *Log) WithFields(fields Fields) *Record {
 	record := &Record{
-		Logger: logger,
+		Log:    l,
 		Fields: fields,
 	}
 	return record
 }
 
-func (record *Record) Info(message string) {
-	record.Logger.log(InfoLevel, record, message)
+func (r *Record) Info(message string) {
+	r.Log.log(InfoLevel, r, message)
 }
 
-func (logger *Logger) log(level Level, record *Record, message string) {
-	logger.Handler(record.prepare(level, message))
+//log just message without fields
+func (l *Log) Info(message string) {
+	log.log(InfoLevel, NewRecord(l), message)
 }
 
-func (record *Record) prepare(level Level, message string) *Record {
-	record.Message = message
-	record.Level = level
-	record.Timestamp = time.Now()
-	return record
+func (r *Record) Trace(message string) {
+	r.Log.log(TraceLevel, r, message)
+}
+
+//log just message without fields
+func (l *Log) Trace(message string) {
+	log.log(TraceLevel, NewRecord(l), message)
+}
+
+func (r *Record) Debug(message string) {
+	r.Log.log(DebugLevel, r, message)
+}
+
+//log just message without fields
+func (l *Log) Debug(message string) {
+	log.log(DebugLevel, NewRecord(l), message)
+}
+
+func (r *Record) Error(message string) {
+	r.Log.log(ErrorLevel, r, message)
+}
+
+//log just message without fields
+func (l *Log) Error(message string) {
+	log.log(ErrorLevel, NewRecord(l), message)
+}
+
+func (r *Record) Fatal(message string) {
+	r.Log.log(FatalLevel, r, message)
+}
+
+//log just message without fields
+func (l *Log) Fatal(message string) {
+	log.log(FatalLevel, NewRecord(l), message)
+}
+
+func (l *Log) log(lvl Level, r *Record, msg string) {
+	l.Handler(r.prepare(lvl, msg))
+}
+
+func (r *Record) prepare(lvl Level, msg string) *Record {
+	r.Message = msg
+	r.Level = lvl
+	r.Timestamp = Now()
+	return r
 }

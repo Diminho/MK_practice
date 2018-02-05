@@ -9,14 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
 
+	"github.com/Diminho/MK_practice/config"
 	"github.com/Diminho/MK_practice/models"
 	"github.com/Diminho/MK_practice/simplelog"
 	logjson "github.com/Diminho/MK_practice/simplelog/handlers/json"
@@ -25,11 +28,12 @@ import (
 )
 
 type App struct {
-	db             models.Database
 	broadcast      chan models.EventPlaces
 	eventClients   map[string][]*websocket.Conn
 	facebookState  string
 	facebookConfig *oauth2.Config
+	logger         *simplelog.Log
+	dbInstance     func() *models.DB
 }
 
 type EventSystemMessage struct {
@@ -50,49 +54,62 @@ var mu = &sync.Mutex{}
 
 func main() {
 
-	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatal("Failed to open log file: ", err)
+	file, fileErr := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if fileErr != nil {
+		log.Fatal("Failed to open log file: ", fileErr)
 	}
 	defer file.Close()
 
-	logger := simplelog.NewLogger(file)
+	logger := simplelog.NewLog(file)
 	logger.SetHandler(logjson.New(logger))
-	logger.WithFields(simplelog.Fields{"user": "Dima", "file": "kaboom.txt"}).Info("FIRST")
+	// logger.WithFields(simplelog.Fields{"user": "Dima", "file": "kaboom.txt"}).Info("FIRST")
+	// logger.WithField("NATA", "VASHS").Info("FIRST")
+	// logger.Info("JUST MESSAGE")
 
-	// db, dbErr := models.Connect(config.User, config.Host, config.DbName)
-	// if dbErr != nil {
-	// 	log.Panic(dbErr)
-	// }
+	db, dbErr := models.Connect()
+	if dbErr != nil {
+		log.Panic(dbErr)
+	}
 
-	// app := &App{
-	// 	db:           db,
-	// 	eventClients: make(map[string][]*websocket.Conn),
-	// 	broadcast:    make(chan models.EventPlaces),
-	// 	facebookConfig: &oauth2.Config{
-	// 		ClientID:     config.ClientID,
-	// 		ClientSecret: config.ClientSecret,
-	// 		RedirectURL:  config.RedirectURL,
-	// 		Scopes:       config.Scopes,
-	// 		Endpoint:     config.Endpoint,
-	// 	},
-	// 	facebookState: "MK_PRACTICE",
-	// }
+	app := &App{
+		eventClients: make(map[string][]*websocket.Conn),
+		broadcast:    make(chan models.EventPlaces),
+		facebookConfig: &oauth2.Config{
+			ClientID:     config.ClientID,
+			ClientSecret: config.ClientSecret,
+			RedirectURL:  config.RedirectURL,
+			Scopes:       config.Scopes,
+			Endpoint:     config.Endpoint,
+		},
+		facebookState: "MK_PRACTICE",
+		dbInstance:    db.DBInstance(),
+	}
 
-	// fs := http.FileServer(http.Dir("./public"))
-	// http.Handle("/", fs)
+	fs := http.FileServer(http.Dir("./public"))
+	http.Handle("/", fs)
 
-	// http.HandleFunc("/ws", app.handleConnections)
-	// http.HandleFunc("/event", app.handleEvent)
-	// http.HandleFunc("/facebook_login", app.handleFacebookLogin)
-	// http.HandleFunc("/facebookCallback", app.handleFacebookCallback)
-	// go app.handlePlaceBookings()
+	http.HandleFunc("/ws", app.handleConnections)
+	http.HandleFunc("/event", app.handleEvent)
+	http.HandleFunc("/facebook_login", app.handleFacebookLogin)
+	http.HandleFunc("/facebookCallback", app.handleFacebookCallback)
+	go app.handlePlaceBookings()
 
-	// log.Println("Server started. Port: 8000")
-	// err := http.ListenAndServe(":8000", nil)
-	// if err != nil {
-	// 	log.Fatal("ListenAndServe: ", err)
-	// }
+	//simple graceful shutdown
+	var gracefulShut = make(chan os.Signal)
+	signal.Notify(gracefulShut, syscall.SIGTERM)
+	signal.Notify(gracefulShut, syscall.SIGINT)
+	go func() {
+		sig := <-gracefulShut
+		fmt.Printf("caught signal: %+v", sig)
+		fmt.Println("Wait for 5 second to finish processing")
+		time.Sleep(5 * time.Second)
+		os.Exit(0)
+	}()
+
+	err := http.ListenAndServe(":8000", nil)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
 
 }
 
@@ -130,9 +147,8 @@ func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var user models.User
 	json.Unmarshal(response, &user)
-	fmt.Println(user)
-	if !app.db.CheckIfUserExists(user.Email) {
-		app.db.AddNewUser(&user)
+	if !app.dbInstance().UserExists(user.Email) {
+		app.dbInstance().AddNewUser(&user)
 
 	}
 
@@ -161,69 +177,68 @@ func (app *App) handleFacebookLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleEvent(w http.ResponseWriter, r *http.Request) {
-	templateData := app.db.QueryForAllPlacesInEvent()
-	templateData.Request = r
+	tmplData := app.dbInstance().AllPlacesInEvent()
+	tmplData.Request = r
 
 	cookie, ok := isLogged(r)
 	fmt.Println(cookie)
 	if !ok {
-		templateData.UserInfo["isLogged"] = "0"
+		tmplData.UserInfo["isLogged"] = "0"
 	} else {
-		user, _ := app.db.FindUserByEmail(cookie.Value)
-		templateData.UserInfo["isLogged"] = "1"
-		templateData.UserInfo["name"] = user.Name
-		templateData.UserInfo["id"] = user.ID
+		user, _ := app.dbInstance().FindUserByEmail(cookie.Value)
+		tmplData.UserInfo["isLogged"] = "1"
+		tmplData.UserInfo["name"] = user.Name
+		tmplData.UserInfo["id"] = user.ID
 	}
 
-	populateTemplate(templateData, w, "public/event.html")
+	populateTemplate(tmplData, w, "public/event.html")
 }
 
 func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
-	wsConnection, err := upgrader.Upgrade(w, r, nil)
+	wsConn, err := upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, message, err := wsConnection.ReadMessage()
+	_, msg, err := wsConn.ReadMessage()
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	event := string(message)
+	event := string(msg)
 
 	clients, ok := app.eventClients[event]
 
 	if !ok {
-		client := []*websocket.Conn{wsConnection}
+		client := []*websocket.Conn{wsConn}
 		app.eventClients[event] = client
 	} else {
-		clients = append(clients, wsConnection)
+		clients = append(clients, wsConn)
 		app.eventClients[event] = clients
 	}
 
 	// Defering here since we have defined eventClients for this particular connection
 	defer func() {
-		deleteClient(app.eventClients[event], indexOfClient(wsConnection, app.eventClients[event]))
-		wsConnection.Close()
+		deleteClient(app.eventClients[event], indexOfClient(wsConn, app.eventClients[event]))
+		wsConn.Close()
 	}()
 
 	for {
 		var places models.EventPlaces
 		//imagine data is not corrupted or mixed up
-		erro := wsConnection.ReadJSON(&places)
-		if erro != nil {
-			log.Printf("error: %v", erro)
+		err := wsConn.ReadJSON(&places)
+		if err != nil {
+			log.Printf("error: %v", err)
 			return
 		}
 
-		fmt.Println(places)
 		mu.Lock()
-		code := app.db.ProcessPlace(&places, buildUserIdentity(wsConnection.RemoteAddr().String()))
+		code := app.dbInstance().ProcessPlace(&places, buildUserIdentity(wsConn.RemoteAddr().String()))
 		mu.Unlock()
 		places.ErrorCode = code
-		occupied := app.db.QueryForOccupiedPlacesInEvent()
+		occupied := app.dbInstance().OccupiedPlacesInEvent()
 
 		for _, occupiedPlace := range occupied {
 			if !inStringSlice(places.BookedPlaces, occupiedPlace.PlaceIdentity) {
@@ -231,7 +246,7 @@ func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		places.UserAddr = wsConnection.RemoteAddr().String()
+		places.UserAddr = wsConn.RemoteAddr().String()
 
 		app.broadcast <- places
 	}
@@ -245,17 +260,17 @@ func (app *App) handlePlaceBookings() {
 				continue
 			}
 			if places.UserAddr == client.RemoteAddr().String() {
-				er := client.WriteJSON(getEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
+				err := client.WriteJSON(getEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
 
-				if er != nil {
-					log.Printf("error: %v", er)
+				if err != nil {
+					log.Printf("error: %v", err)
 				}
 				continue
 			}
-			er := client.WriteJSON(places)
+			err := client.WriteJSON(places)
 
-			if er != nil {
-				log.Printf("error: %v", er)
+			if err != nil {
+				log.Printf("error: %v", err)
 			}
 		}
 	}
@@ -276,8 +291,8 @@ func inStringSlice(input []string, needle string) bool {
 	return false
 }
 
-func deleteClient(a []*websocket.Conn, index int) {
-	copy(a[index:], a[index+1:])
+func deleteClient(a []*websocket.Conn, i int) {
+	copy(a[i:], a[i+1:])
 	a[len(a)-1] = nil // or the zero value of T
 	a = a[:len(a)-1]
 }
@@ -304,10 +319,10 @@ func getEventSystemMessage(code int, event string, place string) EventSystemMess
 	return EventSystemMessage{Message: message, MessageType: code, Event: event, LastActedPlace: place, BookTime: models.BookTime}
 }
 
-func buildUserIdentity(remoteAddress string) string {
-	host, port, _ := net.SplitHostPort(remoteAddress)
-	userIdentity := fmt.Sprintf("%s_%s", host, port)
-	return userIdentity
+func buildUserIdentity(remoteAddr string) string {
+	host, port, _ := net.SplitHostPort(remoteAddr)
+	userID := fmt.Sprintf("%s_%s", host, port)
+	return userID
 }
 
 func isLogged(r *http.Request) (*http.Cookie, bool) {
