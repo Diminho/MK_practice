@@ -33,7 +33,7 @@ type App struct {
 	facebookState  string
 	facebookConfig *oauth2.Config
 	slog           *simplelog.Log
-	dbInstance     func() *models.DB
+	db             func() *models.DB
 }
 
 type EventSystemMessage struct {
@@ -79,7 +79,7 @@ func main() {
 			Endpoint:     config.Endpoint,
 		},
 		facebookState: "MK_PRACTICE",
-		dbInstance:    db.DBInstance(),
+		db:            db.DBInstance(),
 		slog:          slog,
 	}
 
@@ -144,8 +144,8 @@ func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var user models.User
 	json.Unmarshal(response, &user)
-	if !app.dbInstance().UserExists(user.Email) {
-		app.dbInstance().AddNewUser(&user)
+	if !app.db().UserExists(user.Email) {
+		app.db().AddNewUser(&user)
 
 	}
 
@@ -174,7 +174,7 @@ func (app *App) handleFacebookLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) handleEvent(w http.ResponseWriter, r *http.Request) {
-	tmplData := app.dbInstance().AllPlacesInEvent()
+	tmplData := app.db().AllPlacesInEvent()
 	tmplData.Request = r
 
 	cookie, ok := isLogged(r)
@@ -182,7 +182,7 @@ func (app *App) handleEvent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		tmplData.UserInfo["isLogged"] = "0"
 	} else {
-		user, _ := app.dbInstance().FindUserByEmail(cookie.Value)
+		user, _ := app.db().FindUserByEmail(cookie.Value)
 		tmplData.UserInfo["isLogged"] = "1"
 		tmplData.UserInfo["name"] = user.Name
 		tmplData.UserInfo["id"] = user.ID
@@ -232,10 +232,10 @@ func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		mu.Lock()
-		code := app.dbInstance().ProcessPlace(&places, buildUserIdentity(wsConn.RemoteAddr().String()))
+		code := app.db().ProcessPlace(&places, buildUserIdentity(wsConn.RemoteAddr().String()))
 		mu.Unlock()
 		places.ErrorCode = code
-		occupied := app.dbInstance().OccupiedPlacesInEvent()
+		occupied := app.db().OccupiedPlacesInEvent()
 
 		for _, occupiedPlace := range occupied {
 			if !inStringSlice(places.BookedPlaces, occupiedPlace.PlaceIdentity) {
