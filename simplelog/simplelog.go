@@ -1,5 +1,10 @@
 package simplelog
 
+//EXAMPES:
+// logger.WithFields(simplelog.Fields{"user": "JohnDoe", "file": "kaboom.txt"}).Info("FIRST")
+// logger.WithField("user", "JohnDoe").Info("FIRST")
+// logger.Info("JUST MESSAGE")
+
 import (
 	"fmt"
 	"io"
@@ -84,6 +89,11 @@ func (l *Log) Trace(message string) {
 	log.log(TraceLevel, NewRecord(l), message)
 }
 
+// Tracef level formatted message.
+func (l *Log) Tracef(msg string, v ...interface{}) {
+	log.log(TraceLevel, NewRecord(l), fmt.Sprintf(msg, v...))
+}
+
 func (r *Record) Debug(message string) {
 	r.Log.log(DebugLevel, r, message)
 }
@@ -91,6 +101,11 @@ func (r *Record) Debug(message string) {
 //log just message without fields
 func (l *Log) Debug(message string) {
 	log.log(DebugLevel, NewRecord(l), message)
+}
+
+// Debugf level formatted message.
+func (l *Log) Debugf(msg string, v ...interface{}) {
+	log.log(DebugLevel, NewRecord(l), fmt.Sprintf(msg, v...))
 }
 
 func (r *Record) Error(err error) {
