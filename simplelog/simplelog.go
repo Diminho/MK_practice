@@ -2,6 +2,7 @@ package simplelog
 
 import (
 	"io"
+	"os"
 	"sync"
 	"time"
 )
@@ -97,11 +98,13 @@ func (l *Log) Error(message string) {
 
 func (r *Record) Fatal(message string) {
 	r.Log.log(FatalLevel, r, message)
+	os.Exit(1)
 }
 
 //log just message without fields
 func (l *Log) Fatal(message string) {
 	log.log(FatalLevel, NewRecord(l), message)
+	os.Exit(1)
 }
 
 func (l *Log) log(lvl Level, r *Record, msg string) {
