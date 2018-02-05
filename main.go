@@ -62,9 +62,6 @@ func main() {
 
 	slog := simplelog.NewLog(file)
 	slog.SetHandler(logjson.New(slog))
-	// logger.WithFields(simplelog.Fields{"user": "Dima", "file": "kaboom.txt"}).Info("FIRST")
-	// logger.WithField("NATA", "VASHS").Info("FIRST")
-	// logger.Info("JUST MESSAGE")
 
 	db, dbErr := models.Connect()
 	if dbErr != nil {
