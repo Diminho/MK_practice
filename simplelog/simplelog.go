@@ -1,6 +1,7 @@
 package simplelog
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -69,6 +70,11 @@ func (l *Log) Info(message string) {
 	log.log(InfoLevel, NewRecord(l), message)
 }
 
+// Infof level formatted message.
+func (l *Log) Infof(msg string, v ...interface{}) {
+	log.log(InfoLevel, NewRecord(l), fmt.Sprintf(msg, v...))
+}
+
 func (r *Record) Trace(message string) {
 	r.Log.log(TraceLevel, r, message)
 }
@@ -87,23 +93,24 @@ func (l *Log) Debug(message string) {
 	log.log(DebugLevel, NewRecord(l), message)
 }
 
-func (r *Record) Error(message string) {
-	r.Log.log(ErrorLevel, r, message)
+func (r *Record) Error(err error) {
+	r.Log.log(ErrorLevel, r, err.Error())
 }
 
 //log just message without fields
-func (l *Log) Error(message string) {
-	log.log(ErrorLevel, NewRecord(l), message)
+func (l *Log) Error(err error) {
+	log.log(ErrorLevel, NewRecord(l), err.Error())
 }
 
-func (r *Record) Fatal(message string) {
-	r.Log.log(FatalLevel, r, message)
+func (r *Record) Fatal(err error) {
+
+	r.Log.log(FatalLevel, r, err.Error())
 	os.Exit(1)
 }
 
 //log just message without fields
-func (l *Log) Fatal(message string) {
-	log.log(FatalLevel, NewRecord(l), message)
+func (l *Log) Fatal(err error) {
+	log.log(FatalLevel, NewRecord(l), err.Error())
 	os.Exit(1)
 }
 

@@ -32,7 +32,7 @@ type App struct {
 	eventClients   map[string][]*websocket.Conn
 	facebookState  string
 	facebookConfig *oauth2.Config
-	logger         *simplelog.Log
+	slog           *simplelog.Log
 	dbInstance     func() *models.DB
 }
 
@@ -60,15 +60,15 @@ func main() {
 	}
 	defer file.Close()
 
-	logger := simplelog.NewLog(file)
-	logger.SetHandler(logjson.New(logger))
+	slog := simplelog.NewLog(file)
+	slog.SetHandler(logjson.New(slog))
 	// logger.WithFields(simplelog.Fields{"user": "Dima", "file": "kaboom.txt"}).Info("FIRST")
 	// logger.WithField("NATA", "VASHS").Info("FIRST")
 	// logger.Info("JUST MESSAGE")
 
 	db, dbErr := models.Connect()
 	if dbErr != nil {
-		log.Panic(dbErr)
+		slog.Fatal(dbErr)
 	}
 
 	app := &App{
@@ -83,6 +83,7 @@ func main() {
 		},
 		facebookState: "MK_PRACTICE",
 		dbInstance:    db.DBInstance(),
+		slog:          slog,
 	}
 
 	fs := http.FileServer(http.Dir("./public"))
@@ -100,15 +101,16 @@ func main() {
 	signal.Notify(gracefulShut, syscall.SIGINT)
 	go func() {
 		sig := <-gracefulShut
-		fmt.Printf("caught signal: %+v", sig)
-		fmt.Println("Wait for 5 second to finish processing")
+		slog.Infof("caught signal: %+v", sig)
+		slog.Info("Wait for 5 second to finish processing")
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	}()
 
+	slog.Info("Server running on port :8000")
 	err := http.ListenAndServe(":8000", nil)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		slog.Fatal(err)
 	}
 
 }
@@ -116,7 +118,7 @@ func main() {
 func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.FormValue("state")
 	if state != app.facebookState {
-		fmt.Printf("invalid oauth state, expected '%s', got '%s'\n", app.facebookState, state)
+		app.slog.Infof("invalid oauth state, expected '%s', got '%s'\n", app.facebookState, state)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -125,7 +127,7 @@ func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 
 	token, err := app.facebookConfig.Exchange(oauth2.NoContext, code)
 	if err != nil {
-		fmt.Printf("oauthConf.Exchange() failed with '%s'\n", err)
+		app.slog.Infof("oauthConf.Exchange() failed with '%s'\n", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -133,7 +135,6 @@ func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 	resp, err := http.Get("https://graph.facebook.com/me?fields=email,name,id&access_token=" +
 		url.QueryEscape(token.AccessToken))
 	if err != nil {
-		fmt.Printf("Get: %s\n", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -141,7 +142,6 @@ func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 
 	response, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("ReadAll: %s\n", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -163,7 +163,7 @@ func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 func (app *App) handleFacebookLogin(w http.ResponseWriter, r *http.Request) {
 	authURL, err := url.Parse(app.facebookConfig.Endpoint.AuthURL)
 	if err != nil {
-		log.Fatal("Parse: ", err)
+		app.slog.Error(err)
 	}
 	parameters := url.Values{}
 	parameters.Add("client_id", app.facebookConfig.ClientID)
@@ -198,12 +198,12 @@ func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
-		log.Fatal(err)
+		app.slog.Fatal(err)
 	}
 
 	_, msg, err := wsConn.ReadMessage()
 	if err != nil {
-		log.Println(err)
+		app.slog.Error(err)
 		return
 	}
 
@@ -230,7 +230,7 @@ func (app *App) handleConnections(w http.ResponseWriter, r *http.Request) {
 		//imagine data is not corrupted or mixed up
 		err := wsConn.ReadJSON(&places)
 		if err != nil {
-			log.Printf("error: %v", err)
+			app.slog.Error(err)
 			return
 		}
 
@@ -263,14 +263,14 @@ func (app *App) handlePlaceBookings() {
 				err := client.WriteJSON(getEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
 
 				if err != nil {
-					log.Printf("error: %v", err)
+					app.slog.Error(err)
 				}
 				continue
 			}
 			err := client.WriteJSON(places)
 
 			if err != nil {
-				log.Printf("error: %v", err)
+				app.slog.Error(err)
 			}
 		}
 	}
