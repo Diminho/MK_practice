@@ -9,17 +9,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/Diminho/MK_practice/config"
 	"github.com/Diminho/MK_practice/models"
 	"github.com/Diminho/MK_practice/simplelog"
 	logjson "github.com/Diminho/MK_practice/simplelog/handlers/json"
@@ -63,52 +60,52 @@ func main() {
 	slog := simplelog.NewLog(file)
 	slog.SetHandler(logjson.New(slog))
 
-	db, dbErr := models.Connect()
-	if dbErr != nil {
-		slog.Fatal(dbErr)
-	}
+	// db, dbErr := models.Connect()
+	// if dbErr != nil {
+	// 	slog.Fatal(dbErr)
+	// }
 
-	app := &App{
-		eventClients: make(map[string][]*websocket.Conn),
-		broadcast:    make(chan models.EventPlaces),
-		facebookConfig: &oauth2.Config{
-			ClientID:     config.ClientID,
-			ClientSecret: config.ClientSecret,
-			RedirectURL:  config.RedirectURL,
-			Scopes:       config.Scopes,
-			Endpoint:     config.Endpoint,
-		},
-		facebookState: "MK_PRACTICE",
-		db:            db.DBInstance(),
-		slog:          slog,
-	}
+	// app := &App{
+	// 	eventClients: make(map[string][]*websocket.Conn),
+	// 	broadcast:    make(chan models.EventPlaces),
+	// 	facebookConfig: &oauth2.Config{
+	// 		ClientID:     config.ClientID,
+	// 		ClientSecret: config.ClientSecret,
+	// 		RedirectURL:  config.RedirectURL,
+	// 		Scopes:       config.Scopes,
+	// 		Endpoint:     config.Endpoint,
+	// 	},
+	// 	facebookState: "MK_PRACTICE",
+	// 	db:            db.DBInstance(),
+	// 	slog:          slog,
+	// }
 
-	fs := http.FileServer(http.Dir("./public"))
-	http.Handle("/", fs)
+	// fs := http.FileServer(http.Dir("./public"))
+	// http.Handle("/", fs)
 
-	http.HandleFunc("/ws", app.handleConnections)
-	http.HandleFunc("/event", app.handleEvent)
-	http.HandleFunc("/facebook_login", app.handleFacebookLogin)
-	http.HandleFunc("/facebookCallback", app.handleFacebookCallback)
-	go app.handlePlaceBookings()
+	// http.HandleFunc("/ws", app.handleConnections)
+	// http.HandleFunc("/event", app.handleEvent)
+	// http.HandleFunc("/facebook_login", app.handleFacebookLogin)
+	// http.HandleFunc("/facebookCallback", app.handleFacebookCallback)
+	// go app.handlePlaceBookings()
 
-	//simple graceful shutdown
-	var gracefulShut = make(chan os.Signal)
-	signal.Notify(gracefulShut, syscall.SIGTERM)
-	signal.Notify(gracefulShut, syscall.SIGINT)
-	go func() {
-		sig := <-gracefulShut
-		slog.Infof("caught signal: %+v", sig)
-		slog.Info("Wait for 5 second to finish processing")
-		time.Sleep(5 * time.Second)
-		os.Exit(0)
-	}()
+	// //simple graceful shutdown
+	// var gracefulShut = make(chan os.Signal)
+	// signal.Notify(gracefulShut, syscall.SIGTERM)
+	// signal.Notify(gracefulShut, syscall.SIGINT)
+	// go func() {
+	// 	sig := <-gracefulShut
+	// 	slog.Infof("caught signal: %+v", sig)
+	// 	slog.Info("Wait for 5 second to finish processing")
+	// 	time.Sleep(5 * time.Second)
+	// 	os.Exit(0)
+	// }()
 
-	slog.Info("Server running on port :8000")
-	err := http.ListenAndServe(":8000", nil)
-	if err != nil {
-		slog.Fatal(err)
-	}
+	// slog.Info("Server running on port :8000")
+	// err := http.ListenAndServe(":8000", nil)
+	// if err != nil {
+	// 	slog.Fatal(err)
+	// }
 
 }
 

@@ -13,7 +13,9 @@ import (
 	"time"
 )
 
-type HandlerFunc func(*Record) error
+type Handler interface {
+	HandleLog(*Record) error
+}
 
 var Now = time.Now
 
@@ -21,11 +23,11 @@ type Log struct {
 	Mu      sync.Mutex // ensures atomic writes; protects the following fields
 	Out     io.Writer  // destination for output
 	buf     []byte     // for accumulating text to write
-	Handler HandlerFunc
+	Handler Handler
 }
 
-func (l *Log) SetHandler(f HandlerFunc) {
-	l.Handler = f
+func (l *Log) SetHandler(h Handler) {
+	l.Handler = h
 }
 
 // Fields represents a map of entry level data used for structured logging.
@@ -43,7 +45,8 @@ type Record struct {
 var log *Log
 
 func NewLog(out io.Writer) *Log {
-	return &Log{Out: out}
+	log = &Log{Out: out}
+	return log
 }
 
 func NewRecord(l *Log) *Record {
@@ -72,6 +75,8 @@ func (r *Record) Info(message string) {
 
 //log just message without fields
 func (l *Log) Info(message string) {
+	fmt.Println(l)
+	fmt.Println(log)
 	log.log(InfoLevel, NewRecord(l), message)
 }
 
@@ -130,7 +135,7 @@ func (l *Log) Fatal(err error) {
 }
 
 func (l *Log) log(lvl Level, r *Record, msg string) {
-	l.Handler(r.prepare(lvl, msg))
+	l.Handler.HandleLog(r.prepare(lvl, msg))
 }
 
 func (r *Record) prepare(lvl Level, msg string) *Record {

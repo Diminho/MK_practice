@@ -6,12 +6,17 @@ import (
 	"github.com/Diminho/MK_practice/simplelog"
 )
 
-func New(l *simplelog.Log) simplelog.HandlerFunc {
-	encoder := json.NewEncoder(l.Out)
+type Handler struct {
+	*json.Encoder
+	*simplelog.Log
+}
 
-	return func(r *simplelog.Record) error {
-		l.Mu.Lock()
-		defer l.Mu.Unlock()
-		return encoder.Encode(r)
-	}
+func New(l *simplelog.Log) *Handler {
+	return &Handler{Encoder: json.NewEncoder(l.Out), Log: l}
+}
+
+func (h *Handler) HandleLog(r *simplelog.Record) error {
+	h.Log.Mu.Lock()
+	defer h.Log.Mu.Unlock()
+	return h.Encoder.Encode(r)
 }
