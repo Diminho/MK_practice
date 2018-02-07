@@ -53,6 +53,14 @@ INSERT INTO `event_places` (`id`, `placeIdentity`, `isBooked`, `isBought`, `user
 	(6, 'seat_6', 0, 0, '', 1),
 	(7, 'seat_7', 0, 0, '', 1);
 /*!40000 ALTER TABLE `event_places` ENABLE KEYS */;
-/*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
-/*!40014 SET FOREIGN_KEY_CHECKS=IF(@OLD_FOREIGN_KEY_CHECKS IS NULL, 1, @OLD_FOREIGN_KEY_CHECKS) */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+
+
+-- Дамп структуры для таблица ticket_booking.users
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) DEFAULT '',
+  `facebookId` bigint(20) unsigned DEFAULT '0',
+  `email` varchar(255) DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf16;
+
