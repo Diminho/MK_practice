@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"io/ioutil"
@@ -84,32 +85,49 @@ func main() {
 	}
 
 	fs := http.FileServer(http.Dir("./public"))
-	http.Handle("/", fs)
+	mux := http.NewServeMux()
+	mux.Handle("/", fs)
+	mux.HandleFunc("/event", app.handleEvent)
+	mux.HandleFunc("/ws", app.handleConnections)
+	mux.HandleFunc("/facebook_login", app.handleFacebookLogin)
+	mux.HandleFunc("/facebookCallback", app.handleFacebookCallback)
 
-	http.HandleFunc("/ws", app.handleConnections)
-	http.HandleFunc("/event", app.handleEvent)
-	http.HandleFunc("/facebook_login", app.handleFacebookLogin)
-	http.HandleFunc("/facebookCallback", app.handleFacebookCallback)
+	s := &http.Server{Addr: ":8000", Handler: mux}
+
 	go app.handlePlaceBookings()
 
 	//simple graceful shutdown
-	var gracefulShut = make(chan os.Signal)
-	signal.Notify(gracefulShut, syscall.SIGTERM)
-	signal.Notify(gracefulShut, syscall.SIGINT)
+	var gracefulShut = make(chan os.Signal, 1)
+
 	go func() {
-		sig := <-gracefulShut
-		slog.Infof("caught signal: %+v", sig)
-		slog.Info("Wait for 5 second to finish processing")
-		time.Sleep(5 * time.Second)
-		os.Exit(0)
+		slog.Info("Server running on port :8000")
+
+		if err := s.ListenAndServe(); err != http.ErrServerClosed {
+			slog.Error(err)
+			gracefulShut <- syscall.SIGTERM
+		}
 	}()
 
-	slog.Info("Server running on port :8000")
-	err := http.ListenAndServe(":8000", nil)
-	if err != nil {
-		slog.Fatal(err)
+	//Graceful shutdown
+	app.graceful(s, slog, gracefulShut)
+
+}
+
+func (app *App) graceful(hs *http.Server, slog *simplelog.Log, gracefulShut chan os.Signal) {
+
+	signal.Notify(gracefulShut, os.Interrupt, syscall.SIGTERM)
+
+	<-gracefulShut
+
+	for client := range app.eventClients {
+		delete(app.eventClients, client)
 	}
 
+	if err := hs.Shutdown(context.Background()); err != nil {
+		slog.Error(err)
+	} else {
+		slog.Info("Server stopped")
+	}
 }
 
 func (app *App) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +196,6 @@ func (app *App) handleEvent(w http.ResponseWriter, r *http.Request) {
 	tmplData.Request = r
 
 	cookie, ok := isLogged(r)
-	fmt.Println(cookie)
 	if !ok {
 		tmplData.UserInfo["isLogged"] = "0"
 	} else {
