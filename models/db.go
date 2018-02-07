@@ -18,7 +18,7 @@ type Database interface {
 	AddNewUser(*User) error
 	FindUserByEmail(string) (User, error)
 	isAlive() (bool, error)
-	// DatabaseHandler() func() (*DB, error)
+	Instance() *DB
 }
 
 type DB struct {
@@ -37,32 +37,31 @@ func Connect() (*DB, error) {
 	return &DB{db}, nil
 }
 
-func (db *DB) DBInstance() func() *DB {
+func (db *DB) Instance() *DB {
 
-	return func() *DB {
-		var connected bool
-		connected, err := db.isAlive()
+	var connected bool
+	connected, err := db.isAlive()
+	if err != nil {
+		log.Println("isAlive error: ", err)
+	}
+
+	for connected != true { // reconnect if we lost connection
+		log.Print("Connection to MySQL was lost. Waiting for 3s...")
+		db.Close()
+		time.Sleep(3 * time.Second)
+		log.Print("Reconnecting...")
+		db, err = Connect()
+		if err != nil {
+			log.Println("Coonect error: ", err)
+		}
+		connected, err = db.isAlive()
 		if err != nil {
 			log.Println("isAlive error: ", err)
 		}
-
-		for connected != true { // reconnect if we lost connection
-			log.Print("Connection to MySQL was lost. Waiting for 3s...")
-			db.Close()
-			time.Sleep(3 * time.Second)
-			log.Print("Reconnecting...")
-			db, err = Connect()
-			if err != nil {
-				log.Println("Coonect error: ", err)
-			}
-			connected, err = db.isAlive()
-			if err != nil {
-				log.Println("isAlive error: ", err)
-			}
-		}
-
-		return db
 	}
+
+	return db
+
 }
 
 func (db *DB) isAlive() (bool, error) {
