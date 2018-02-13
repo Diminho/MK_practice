@@ -11,9 +11,11 @@ import (
 
 func PopulateTemplate(data interface{}, w http.ResponseWriter, tmplFile string) {
 	tmpl, err := template.ParseFiles(tmplFile)
+
 	if err != nil {
 		fmt.Errorf("error %v", err)
 	}
+
 	if tmpl != nil {
 		tmpl.Execute(w, data)
 	}
@@ -42,20 +44,24 @@ func IndexOfClient(conn *websocket.Conn, data []*websocket.Conn) int {
 			return k
 		}
 	}
+
 	return -1
 }
 
 func BuildUserIdentity(remoteAddr string) string {
 	host, port, _ := net.SplitHostPort(remoteAddr)
 	userID := fmt.Sprintf("%s_%s", host, port)
+
 	return userID
 }
 
 func IsLogged(r *http.Request) (*http.Cookie, bool) {
 	var isLogged bool
 	cookie, errorCookie := r.Cookie("ticket_booking")
+
 	if errorCookie == nil {
 		isLogged = true
 	}
+
 	return cookie, isLogged
 }

@@ -15,10 +15,6 @@ import (
 	"github.com/Diminho/MK_practice/app"
 )
 
-type TestApp struct {
-	*app.App
-}
-
 var testApp *WraperApp
 
 type mockDB struct{}
@@ -80,8 +76,7 @@ func TestHandleEventWithCookies(t *testing.T) {
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/event", srv.URL), nil)
 
-	cookie := http.Cookie{Name: "ticket_booking", Value: "user_1"}
-	req.AddCookie(&cookie)
+	req.AddCookie(&http.Cookie{Name: "ticket_booking", Value: "user_1"})
 
 	var client = &http.Client{}
 	res, err := client.Do(req)
