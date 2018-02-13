@@ -33,6 +33,7 @@ func InStringSlice(input []string, needle string) bool {
 }
 
 func DeleteClient(a []*websocket.Conn, i int) {
+	// TODO: Handle i == -1
 	copy(a[i:], a[i+1:])
 	a[len(a)-1] = nil // or the zero value of T
 	a = a[:len(a)-1]

@@ -10,6 +10,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// TODO: Hide internal fields
 type App struct {
 	Broadcast      chan models.EventPlaces
 	EventClients   map[string][]*websocket.Conn
@@ -22,10 +23,11 @@ type App struct {
 	AbsSrvRootDir  string
 }
 
-func InitApp(db *models.DB, slog *simplelog.Log) *App {
+// TODO: Should be configurable
+func InitApp(db models.Database, slog *simplelog.Log) *App {
 	app := &App{
 		EventClients: make(map[string][]*websocket.Conn),
-		Broadcast:    make(chan models.EventPlaces),
+		Broadcast:    make(chan models.EventPlaces, 1),
 		FacebookConfig: &oauth2.Config{
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,

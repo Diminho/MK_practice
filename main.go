@@ -14,13 +14,20 @@ import (
 )
 
 func main() {
-
 	file, fileErr := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if fileErr != nil {
 		log.Fatal("Failed to open log file: ", fileErr)
 	}
-	defer file.Close()
+	// TODO: Error handling
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
 
+	// TODO: Add default Handler
+	// TODO: Implement log level isolation
 	slog := simplelog.NewLog(file)
 	slog.SetHandler(logjson.New(slog))
 

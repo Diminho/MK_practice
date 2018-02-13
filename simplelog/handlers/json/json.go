@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/Diminho/MK_practice/simplelog"
+	"github.com/sirupsen/logrus"
 )
 
 type Handler struct {
@@ -11,7 +12,9 @@ type Handler struct {
 	*simplelog.Log
 }
 
+// TODO (BH): Implement concurrent logger
 func New(l *simplelog.Log) *Handler {
+	logrus.Fatal()
 	return &Handler{Encoder: json.NewEncoder(l.Out), Log: l}
 }
 

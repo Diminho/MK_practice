@@ -10,6 +10,7 @@ import (
 	"github.com/Diminho/MK_practice/config"
 )
 
+// TODO: Interface should be declared by its Client
 type Database interface {
 	OccupiedPlacesInEvent() []EventPlacesRow
 	AllPlacesInEvent() EventPlacesTemplate
@@ -24,6 +25,8 @@ type DB struct {
 	*sql.DB
 }
 
+// TODO: Accept config as param
+// TODO: Return DB interface
 func Connect() (*DB, error) {
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:@%s/%s", config.User, config.Host, config.DbName))
 
@@ -44,6 +47,7 @@ func (db *DB) Instance() Database {
 		log.Println("isAlive error: ", err)
 	}
 
+	// TODO: Limit retries
 	for connected != true { // reconnect if we lost connection
 		log.Print("Connection to MySQL was lost. Waiting for 3s...")
 		db.Close()

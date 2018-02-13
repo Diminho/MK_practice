@@ -3,7 +3,6 @@ package models
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 )
 
@@ -28,7 +27,6 @@ type EventPlacesRow struct {
 type EventPlacesTemplate struct {
 	EventPlacesRows []EventPlacesRow
 	EventID         int
-	Request         *http.Request
 	UserInfo        map[string]string
 }
 
@@ -84,9 +82,9 @@ func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
 	return templateRows
 }
 
+// TODO: Error
 func (db *DB) ProcessPlace(places *EventPlaces, user string) int {
 	var sqlStatement string
-	var isBooked int
 
 	switch places.Action {
 	case "buy":
@@ -115,6 +113,7 @@ func (db *DB) ProcessPlace(places *EventPlaces, user string) int {
 	case "unbook":
 		sqlStatement = "UPDATE event_places set isBooked = 0, userId = '' WHERE placeIdentity = ?"
 	case "book":
+		var isBooked int
 		err := db.QueryRow("SELECT isBooked FROM event_places WHERE placeIdentity = ?", places.LastActedPlace).Scan(&isBooked)
 		if err != nil {
 			log.Fatal(err)

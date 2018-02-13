@@ -19,7 +19,7 @@ var testApp *WraperApp
 
 type mockDB struct{}
 
-func (mdb mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
+func (mdb *mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
 
 	templateRows := models.EventPlacesTemplate{}
 	templateRows.UserInfo = make(map[string]string)
@@ -31,44 +31,45 @@ func (mdb mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
 	return templateRows
 }
 
-func (mdb mockDB) AddNewUser(user *models.User) error {
+func (mdb *mockDB) AddNewUser(user *models.User) error {
 	return nil
 }
 
-func (mdb mockDB) FindUserByEmail(email string) (models.User, error) {
+func (mdb *mockDB) FindUserByEmail(email string) (models.User, error) {
 	user := models.User{Name: "John", Email: "test@email.com", FacebookID: "000000", ID: "0007"}
 
 	return user, nil
 }
 
-func (mdb mockDB) Instance() models.Database {
-	return &mdb
+func (mdb *mockDB) Instance() models.Database {
+	return mdb
 }
 
-func (mdb mockDB) OccupiedPlacesInEvent() []models.EventPlacesRow {
+func (mdb *mockDB) OccupiedPlacesInEvent() []models.EventPlacesRow {
 	return nil
 }
 
-func (mdb mockDB) ProcessPlace(places *models.EventPlaces, user string) int {
+func (mdb *mockDB) ProcessPlace(places *models.EventPlaces, user string) int {
 	return 0
 }
 
-func (mdb mockDB) UserExists(email string) bool {
+func (mdb *mockDB) UserExists(email string) bool {
 	return false
 }
 
+// TODO: Should not be common
 func init() {
 	testApp = &WraperApp{&app.App{
 		EventClients: make(map[string][]*websocket.Conn),
 		Broadcast:    make(chan models.EventPlaces),
-		Db:           mockDB{},
+		Db:           &mockDB{},
 		SrvRootDir:   "../public",
 		Mu:           &sync.Mutex{},
 	}}
-
 }
 
 func TestHandleEventWithCookies(t *testing.T) {
+	// testify/assert
 
 	srv := httptest.NewServer(LoadRoutes(testApp))
 
@@ -86,11 +87,12 @@ func TestHandleEventWithCookies(t *testing.T) {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK %v", res.Status)
+		t.Errorf("expected status OK %s", res.Status)
 	}
 }
 
 func TestHandleEvent(t *testing.T) {
+	// t.Run()
 
 	srv := httptest.NewServer(LoadRoutes(testApp))
 
@@ -118,13 +120,13 @@ func TestHandleConnections(t *testing.T) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		t.Errorf("cannot make websocket connection: %v", err)
+		t.Fatalf("cannot make websocket connection: %v", err)
 	}
 
 	//first send to set event name
 	err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
 	if err != nil {
-		t.Errorf("cannot write message: %v", err)
+		t.Fatalf("cannot write message: %v", err)
 	}
 
 	// var places models.EventPlaces
@@ -149,8 +151,8 @@ func TestHandleConnections(t *testing.T) {
 		t.Errorf("expected %v , got %v", expected, gotEventSysMsg)
 	}
 
+	// TODO: Error
 	conn.Close()
-
 }
 func TestHandleConnectionsWithOtherClients(t *testing.T) {
 	//setting up server
@@ -164,9 +166,11 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 
 	var wg sync.WaitGroup
 
+	testInput := models.EventPlaces{Event: "test_event", BookedPlaces: []string{"seat_5"}, Action: "book", LastActedPlace: "seat_5"}
+
 	wg.Add(2)
 	// FIRST CLIENT
-	go func(wg *sync.WaitGroup) {
+	go func() {
 		defer wg.Done()
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
@@ -182,9 +186,7 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 		// var places models.EventPlaces
 		var gotEventSysMsg models.EventSystemMessage
 
-		input := models.EventPlaces{Event: "test_event", BookedPlaces: []string{"seat_5"}, Action: "book", LastActedPlace: "seat_5"}
-
-		err = conn.WriteJSON(input)
+		err = conn.WriteJSON(testInput)
 		if err != nil {
 			t.Errorf("cannot write message: %v", err)
 		}
@@ -201,10 +203,10 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 			t.Errorf("expected %v , got %v", expected, gotEventSysMsg)
 		}
 		conn.Close()
-	}(&wg)
+	}()
 
 	// SECOND CLIENT
-	go func(wg *sync.WaitGroup) {
+	go func() {
 		defer wg.Done()
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
@@ -220,20 +222,22 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 		var got models.EventPlaces
 		err = conn.ReadJSON(&got)
 		if err != nil {
-			t.Errorf("cannot read message: %v", err)
+			t.Error("cannot read message: ", err)
 		}
-		fmt.Printf("success: received response: %v\n", got)
+		t.Log("success: received response: ", got)
 
-		expected := models.EventPlaces{BookedPlaces: []string{"seat_5"}, Event: "test_event", LastActedPlace: "seat_5", Action: "book"}
 		// we dont want to comtare user remote address
 		got.UserAddr = ""
-		if !reflect.DeepEqual(expected, got) {
-			fmt.Println("equal")
-			t.Errorf("expected %v , got %v", expected, got)
+		if !reflect.DeepEqual(testInput, got) {
+			t.Errorf("expected %v , got %v", testInput, got)
 		}
 		conn.Close()
-	}(&wg)
+	}()
 
 	wg.Wait()
 
 }
+
+// TODO: Add some negative cases
+// TODO: Try testify or https://github.com/matryer/is
+// TODO: Try t.Run()

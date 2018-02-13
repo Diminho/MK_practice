@@ -14,10 +14,13 @@ import (
 	"syscall"
 	"time"
 
+	"io"
+
 	"github.com/Diminho/MK_practice/app"
 	"github.com/Diminho/MK_practice/models"
 	"github.com/Diminho/MK_practice/simplelog"
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 )
 
@@ -30,6 +33,9 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
+}
+
+type Application interface {
 }
 
 func NewServer(app *app.App) {
@@ -48,32 +54,35 @@ func NewServer(app *app.App) {
 
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			wApp.Slog.Error(err)
+			// TODO: context
 			gracefulShut <- syscall.SIGTERM
 		}
 	}()
 
-	//Graceful shutdown
-	wApp.graceful(s, app.Slog, gracefulShut)
-}
-
-func (wApp *WraperApp) graceful(hs *http.Server, slog *simplelog.Log, gracefulShut chan os.Signal) {
-
 	signal.Notify(gracefulShut, os.Interrupt, syscall.SIGTERM)
-
+	// select{gracefulShut, context}
 	<-gracefulShut
 
+	//Graceful shutdown
+	wApp.graceful(s, app.Slog)
+}
+
+// TODO: Add context
+func (wApp *WraperApp) graceful(hs *http.Server, slog *simplelog.Log) {
 	for client := range wApp.EventClients {
+		// TODO: All connects must be closed before exit
 		delete(wApp.EventClients, client)
 	}
 
+	// TODO: Add timeout
 	if err := hs.Shutdown(context.Background()); err != nil {
 		slog.Error(err)
-	} else {
-		slog.Info("Server stopped")
 	}
+	slog.Info("Server stopped")
 }
 
 func LoadRoutes(wApp *WraperApp) http.Handler {
+	// TODO: Error
 	wApp.AbsSrvRootDir, _ = filepath.Abs(wApp.SrvRootDir)
 	fs := http.FileServer(http.Dir(wApp.AbsSrvRootDir))
 	fmt.Println(wApp.AbsSrvRootDir)
@@ -98,7 +107,7 @@ func (wApp *WraperApp) handleFacebookCallback(w http.ResponseWriter, r *http.Req
 
 	token, err := wApp.FacebookConfig.Exchange(oauth2.NoContext, code)
 	if err != nil {
-		wApp.Slog.Infof("oauthConf.Exchange() failed with '%s'\n", err)
+		wApp.Slog.Info(errors.Wrap(err, "oauthConf.Exchange() failed"))
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -109,7 +118,14 @@ func (wApp *WraperApp) handleFacebookCallback(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// TODO: Error
+		io.Copy(ioutil.Discard, resp.Body)
+		err := resp.Body.Close()
+		if err != nil {
+			wApp.Slog.Error(err)
+		}
+	}()
 
 	response, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -117,14 +133,17 @@ func (wApp *WraperApp) handleFacebookCallback(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var user models.User
+	// TODO: Error
 	json.Unmarshal(response, &user)
-	if !wApp.Db.Instance().UserExists(user.Email) {
-		wApp.Db.Instance().AddNewUser(&user)
 
+	if !wApp.Db.Instance().UserExists(user.Email) {
+		// TODO: ERROR
+		wApp.Db.Instance().AddNewUser(&user)
 	}
 
 	expiration := time.Now().Add(60 * time.Second)
 	//Warning! used to set email in Cookie just for simplicity.
+	// TODO: implement User Side Session store
 	cookie := http.Cookie{Name: "ticket_booking", Value: user.Email, Expires: expiration}
 	http.SetCookie(w, &cookie)
 
@@ -149,7 +168,6 @@ func (wApp *WraperApp) handleFacebookLogin(w http.ResponseWriter, r *http.Reques
 
 func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
 	tmplData := wApp.Db.Instance().AllPlacesInEvent()
-	tmplData.Request = r
 
 	cookie, ok := app.IsLogged(r)
 	if !ok {
@@ -179,9 +197,7 @@ func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request)
 
 	event := string(msg)
 
-	clients, ok := wApp.EventClients[event]
-
-	if !ok {
+	if clients, ok := wApp.EventClients[event]; !ok {
 		client := []*websocket.Conn{wsConn}
 		wApp.EventClients[event] = client
 	} else {
@@ -191,7 +207,9 @@ func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request)
 
 	// Defering here since we have defined eventClients for this particular connection
 	defer func() {
+		// TODO: Use User ID to delete from EventClients
 		app.DeleteClient(wApp.EventClients[event], app.IndexOfClient(wsConn, wApp.EventClients[event]))
+		// TODO: Error
 		wsConn.Close()
 	}()
 
@@ -200,24 +218,29 @@ func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request)
 		//imagine data is not corrupted or mixed up
 		err := wsConn.ReadJSON(&places)
 		if err != nil {
-			// wApp.Slog.Error(err)
-			fmt.Println(err)
+			// TODO: Handle EOF separately
+			wApp.Slog.Error(err)
+			//fmt.Println(err)
 			return
 		}
 
+		// TODO: Split event locking by event ID
 		wApp.Mu.Lock()
-		code := wApp.Db.Instance().ProcessPlace(&places, app.BuildUserIdentity(wsConn.RemoteAddr().String()))
+		// TODO: User ID
+		places.ErrorCode = wApp.Db.Instance().ProcessPlace(&places, app.BuildUserIdentity(wsConn.RemoteAddr().String()))
 		wApp.Mu.Unlock()
 
-		places.ErrorCode = code
 		occupied := wApp.Db.Instance().OccupiedPlacesInEvent()
 
+		existing := make(map[string]struct{})
 		for _, occupiedPlace := range occupied {
-			if !app.InStringSlice(places.BookedPlaces, occupiedPlace.PlaceIdentity) {
+			if _, ok := existing[occupiedPlace.PlaceIdentity]; !ok {
 				places.BookedPlaces = append(places.BookedPlaces, occupiedPlace.PlaceIdentity)
+				existing[occupiedPlace.PlaceIdentity] = struct{}{}
 			}
 		}
 
+		// TODO: Do not share user IP
 		places.UserAddr = wsConn.RemoteAddr().String()
 
 		wApp.Broadcast <- places
@@ -230,17 +253,17 @@ func (wApp *WraperApp) handlePlaceBookings() {
 			if client == nil {
 				continue
 			}
-			if places.UserAddr == client.RemoteAddr().String() {
-				err := client.WriteJSON(models.GetEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
 
+			if places.UserAddr != client.RemoteAddr().String() {
+				err := client.WriteJSON(places)
 				if err != nil {
 					wApp.Slog.Error(err)
 				}
 				continue
 			}
 
-			err := client.WriteJSON(places)
-			fmt.Println(err)
+			err := client.WriteJSON(models.GetEventSystemMessage(places.ErrorCode, places.Event, places.LastActedPlace))
+
 			if err != nil {
 				wApp.Slog.Error(err)
 			}
