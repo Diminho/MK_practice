@@ -29,7 +29,5 @@ func main() {
 		slog.Fatal(dbErr)
 	}
 
-	app := app.InitApp(db, slog)
-
-	mk_server.NewServer(app)
+	mk_server.NewServer(app.InitApp(db, slog))
 }
