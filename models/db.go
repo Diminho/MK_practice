@@ -17,8 +17,7 @@ type Database interface {
 	UserExists(string) bool
 	AddNewUser(*User) error
 	FindUserByEmail(string) (User, error)
-	isAlive() (bool, error)
-	Instance() *DB
+	Instance() Database
 }
 
 type DB struct {
@@ -37,7 +36,7 @@ func Connect() (*DB, error) {
 	return &DB{db}, nil
 }
 
-func (db *DB) Instance() *DB {
+func (db *DB) Instance() Database {
 
 	var connected bool
 	connected, err := db.isAlive()

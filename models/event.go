@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -29,6 +30,14 @@ type EventPlacesTemplate struct {
 	EventID         int
 	Request         *http.Request
 	UserInfo        map[string]string
+}
+
+type EventSystemMessage struct {
+	Message        string `json:"sysMessage"`
+	MessageType    int    `json:"messageType"`
+	Event          string `json:"event"`
+	LastActedPlace string `json:"lastActedPlace"`
+	BookTime       int    `json:"bookTime"`
 }
 
 func (db *DB) OccupiedPlacesInEvent() []EventPlacesRow {
@@ -131,4 +140,17 @@ func (db *DB) ProcessPlace(places *EventPlaces, user string) int {
 	}
 
 	return 0
+}
+
+func GetEventSystemMessage(code int, event string, place string) EventSystemMessage {
+	var message string
+
+	switch code {
+	case 0:
+		message = "Success"
+	case 1:
+		message = fmt.Sprintf("Sorry, this [%s] have been already booked", place)
+	}
+
+	return EventSystemMessage{Message: message, MessageType: code, Event: event, LastActedPlace: place, BookTime: BookTime}
 }

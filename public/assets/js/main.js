@@ -21,6 +21,7 @@ $(document).ready(function() {
             processEventItem("unbook", id)
 
         }
+        console.log(JSON.stringify(event))
         sendMessage(JSON.stringify(event))
     })
 
