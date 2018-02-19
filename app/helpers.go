@@ -60,23 +60,12 @@ func BuildUserIdentity(remoteAddr string) string {
 	return userID
 }
 
-// func IsLogged(r *http.Request) (*http.Cookie, bool) {
-// 	var isLogged bool
-// 	cookie, errorCookie := r.Cookie("ticket_booking")
-
-// 	if errorCookie == nil {
-// 		isLogged = true
-// 	}
-
-// 	return cookie, isLogged
-// }
-
 func AuthUser(r *http.Request, s mk_session.Session, user *models.User) (err error) {
 	if errSet := s.Set("email", user.Email); errSet != nil {
 		err = errSet
 	}
 
-	if errSet := s.Set("isLogged", "true"); errSet != nil {
+	if errSet := s.Set("isLogged", 1); errSet != nil {
 		err = errSet
 	}
 
@@ -91,19 +80,8 @@ func IsLogged(r *http.Request, s mk_session.Session) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if isLogged == "true" {
+	if isLogged == 1 {
 		return true, nil
 	}
 	return false, nil
 }
-
-// func IsLogged(r *http.Request) (*http.Cookie, bool) {
-// 	var isLogged bool
-// 	cookie, errorCookie := r.Cookie("ticket_booking")
-
-// 	if errorCookie == nil {
-// 		isLogged = true
-// 	}
-
-// 	return cookie, isLogged
-// }

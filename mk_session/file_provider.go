@@ -28,7 +28,7 @@ func (fp *FileProvider) Init() error {
 	return err
 }
 
-func (fp *FileProvider) Save(key, value string) error {
+func (fp *FileProvider) Save(key string, value interface{}) error {
 	file, err := os.OpenFile(fp.filename, os.O_RDWR|os.O_APPEND, 0666)
 
 	if err != nil {
@@ -41,7 +41,7 @@ func (fp *FileProvider) Save(key, value string) error {
 		}
 	}()
 
-	data := make(map[string]string)
+	data := make(map[string]interface{})
 
 	//Get data in case we already have this key...
 	decoder := gob.NewDecoder(file)
@@ -57,7 +57,7 @@ func (fp *FileProvider) Save(key, value string) error {
 	return err
 }
 
-func (fp *FileProvider) Read(key string) (string, error) {
+func (fp *FileProvider) Read(key string) (interface{}, error) {
 	var err error
 	file, err := os.OpenFile(fp.filename, os.O_RDONLY, 0666)
 
@@ -72,7 +72,7 @@ func (fp *FileProvider) Read(key string) (string, error) {
 		}
 	}()
 
-	data := make(map[string]string)
+	data := make(map[string]interface{})
 
 	decoder := gob.NewDecoder(file)
 	err = decoder.Decode(&data)
@@ -100,7 +100,7 @@ func (fp *FileProvider) Delete(key string) error {
 		}
 	}()
 
-	data := make(map[string]string)
+	data := make(map[string]interface{})
 
 	//Get data in case we already have this key...
 	decoder := gob.NewDecoder(file)

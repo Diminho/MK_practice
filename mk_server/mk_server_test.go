@@ -2,24 +2,29 @@ package mk_server
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
 
+	"github.com/Diminho/MK_practice/mk_session"
 	"github.com/Diminho/MK_practice/models"
+	"github.com/Diminho/MK_practice/simplelog"
 	"github.com/gorilla/websocket"
 
 	"github.com/Diminho/MK_practice/app"
+	"github.com/stretchr/testify/assert"
 )
 
 var testApp *WraperApp
 
 type mockDB struct{}
 
-func (mdb *mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
+func (mdb *mockDB) AllPlacesInEvent() (models.EventPlacesTemplate, error) {
 
 	templateRows := models.EventPlacesTemplate{}
 	templateRows.UserInfo = make(map[string]string)
@@ -28,7 +33,7 @@ func (mdb *mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
 	eventPlacesRows = append(eventPlacesRows, models.EventPlacesRow{"seat2", 0, 0, "user2"})
 	templateRows.EventPlacesRows = eventPlacesRows
 
-	return templateRows
+	return templateRows, nil
 }
 
 func (mdb *mockDB) AddNewUser(user *models.User) error {
@@ -48,12 +53,12 @@ func (mdb *mockDB) Instance() func() models.Database {
 	}
 }
 
-func (mdb *mockDB) OccupiedPlacesInEvent() []models.EventPlacesRow {
-	return nil
+func (mdb *mockDB) OccupiedPlacesInEvent() ([]models.EventPlacesRow, error) {
+	return nil, nil
 }
 
-func (mdb *mockDB) ProcessPlace(places *models.EventPlaces, user string) models.StatusCode {
-	return 0
+func (mdb *mockDB) ProcessPlace(places *models.EventPlaces, user string) (models.StatusCode, error) {
+	return 0, nil
 }
 
 func (mdb *mockDB) UserExists(email string) (bool, error) {
@@ -61,11 +66,27 @@ func (mdb *mockDB) UserExists(email string) (bool, error) {
 }
 
 func init() {
+
+	file, err := os.OpenFile("log_test.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal("Failed to open log file: ", err)
+	}
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
+
+	slog := simplelog.NewLog(file)
+
 	testApp = &WraperApp{&app.App{
 		EventClients: make(map[string][]*websocket.Conn),
 		Broadcast:    make(chan models.EventPlaces),
 		Db:           (&mockDB{}).Instance(),
 		SrvRootDir:   "../public",
+		Manager:      mk_session.NewManager("sessionTestID", 30),
+		Slog:         slog,
 	}}
 
 }
@@ -103,10 +124,7 @@ func TestHandleEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK %s", res.Status)
-	}
-
+	assert.Equal(t, res.StatusCode, http.StatusOK, "StatusCode is not 200", res.Status)
 }
 
 func TestHandleConnections(t *testing.T) {

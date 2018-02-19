@@ -13,10 +13,6 @@ type Handler struct {
 	*json.Encoder
 }
 
-// func New(l *simplelog.Log) *Handler {
-// 	return &Handler{Encoder: json.NewEncoder(l.Out), Log: l, Mutex: sync.Mutex{}}
-// }
-
 func New(w io.Writer) *Handler {
 	return &Handler{Encoder: json.NewEncoder(w), Mutex: sync.Mutex{}}
 }

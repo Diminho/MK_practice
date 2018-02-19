@@ -102,7 +102,7 @@ func LoadRoutes(wApp *WraperApp) http.Handler {
 func (wApp *WraperApp) handleFacebookCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.FormValue("state")
 	if state != wApp.FacebookState {
-		// wApp.Slog.Infof("invalid oauth state, expected '%s', got '%s'\n", wApp.FacebookState, state)
+		wApp.Slog.Info(fmt.Sprintf("invalid oauth state, expected '%s', got '%s'\n", wApp.FacebookState, state))
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -111,7 +111,7 @@ func (wApp *WraperApp) handleFacebookCallback(w http.ResponseWriter, r *http.Req
 
 	token, err := wApp.FacebookConfig.Exchange(oauth2.NoContext, code)
 	if err != nil {
-		// wApp.Slog.Infof("oauthConf.Exchange() failed with '%s'\n", err)
+		wApp.Slog.Info(fmt.Sprintf("oauthConf.Exchange() failed with '%s'\n", err))
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -187,6 +187,7 @@ func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
 		wApp.Slog.Error(err)
 	}
 	session, err := wApp.Manager.SessionStart(w, r)
+
 	if err != nil {
 		wApp.Slog.Error(err)
 	}
@@ -201,7 +202,8 @@ func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			wApp.Slog.Error(err)
 		}
-		user, err := wApp.Db().FindUserByEmail(email)
+
+		user, err := wApp.Db().FindUserByEmail(email.(string))
 		if err != nil {
 			wApp.Slog.Error(err)
 		}

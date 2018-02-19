@@ -10,10 +10,10 @@ import (
 )
 
 type Session interface {
-	Set(key, value string) error    //set session value
-	Get(key string) (string, error) //get session value
-	Delete(key string) error        //delete session value
-	SessionID() string              //back current sessionID
+	Set(key string, value interface{}) error //set session value
+	Get(key string) (interface{}, error)     //get session value
+	Delete(key string) error                 //delete session value
+	SessionID() string                       //back current sessionID
 }
 
 type Manager struct {
@@ -22,8 +22,8 @@ type Manager struct {
 }
 
 type Provider interface {
-	Save(string, string) error
-	Read(string) (string, error)
+	Save(string, interface{}) error
+	Read(string) (interface{}, error)
 	Delete(key string) error
 	EraseByExpiration()
 	Init() error
@@ -69,7 +69,7 @@ func (ins *Instance) SetProvider(p Provider) {
 	ins.provider = p
 }
 
-func (ins *Instance) Set(key string, value string) error {
+func (ins *Instance) Set(key string, value interface{}) error {
 	err := ins.provider.Save(key, value)
 
 	if err != nil {
@@ -89,14 +89,14 @@ func (ins *Instance) Delete(key string) error {
 	return err
 }
 
-func (ins *Instance) Get(key string) (string, error) {
-	value, err := ins.provider.Read(key)
+func (ins *Instance) Get(key string) (value interface{}, err error) {
+	value, err = ins.provider.Read(key)
 
 	if err != nil {
 		log.Println(err)
 	}
 
-	return value, err
+	return
 }
 
 func (ins *Instance) SessionID() string {
