@@ -12,7 +12,7 @@ type User struct {
 	ID         string
 }
 
-func (db *DB) UserExists(email string) bool {
+func (db *DB) UserExists(email string) (bool, error) {
 	var id int
 	isExists := true
 	err := db.QueryRow("SELECT id FROM users WHERE email = ?", email).Scan(&id)
@@ -20,10 +20,10 @@ func (db *DB) UserExists(email string) bool {
 		if err == sql.ErrNoRows {
 			isExists = false
 		} else {
-			log.Fatal(err)
+			log.Println(err)
 		}
 	}
-	return isExists
+	return isExists, err
 }
 
 func (db *DB) FindUserByEmail(email string) (User, error) {
@@ -32,7 +32,7 @@ func (db *DB) FindUserByEmail(email string) (User, error) {
 	err = db.QueryRow("SELECT name, email, id FROM users WHERE email = ?", email).Scan(&user.Name, &user.Email, &user.ID)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			log.Fatal(err)
+			log.Println(err)
 		}
 	}
 	return user, err
@@ -42,11 +42,11 @@ func (db *DB) AddNewUser(user *User) error {
 	var err error
 	stmt, err := db.Prepare("INSERT INTO users(name, email, facebookId) VALUES(?, ?, ?)")
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	_, err = stmt.Exec(user.Name, user.Email, user.FacebookID)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	return err
 }

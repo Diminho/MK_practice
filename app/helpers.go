@@ -6,6 +6,9 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/Diminho/MK_practice/models"
+
+	"github.com/Diminho/MK_practice/mk_session"
 	"github.com/gorilla/websocket"
 )
 
@@ -33,9 +36,11 @@ func InStringSlice(input []string, needle string) bool {
 }
 
 func DeleteClient(a []*websocket.Conn, i int) {
-	copy(a[i:], a[i+1:])
-	a[len(a)-1] = nil // or the zero value of T
-	a = a[:len(a)-1]
+	if i != -1 {
+		copy(a[i:], a[i+1:])
+		a[len(a)-1] = nil // or the zero value of T
+		a = a[:len(a)-1]
+	}
 }
 
 func IndexOfClient(conn *websocket.Conn, data []*websocket.Conn) int {
@@ -55,13 +60,50 @@ func BuildUserIdentity(remoteAddr string) string {
 	return userID
 }
 
-func IsLogged(r *http.Request) (*http.Cookie, bool) {
-	var isLogged bool
-	cookie, errorCookie := r.Cookie("ticket_booking")
+// func IsLogged(r *http.Request) (*http.Cookie, bool) {
+// 	var isLogged bool
+// 	cookie, errorCookie := r.Cookie("ticket_booking")
 
-	if errorCookie == nil {
-		isLogged = true
+// 	if errorCookie == nil {
+// 		isLogged = true
+// 	}
+
+// 	return cookie, isLogged
+// }
+
+func AuthUser(r *http.Request, s mk_session.Session, user *models.User) (err error) {
+	if errSet := s.Set("email", user.Email); errSet != nil {
+		err = errSet
 	}
 
-	return cookie, isLogged
+	if errSet := s.Set("isLogged", "true"); errSet != nil {
+		err = errSet
+	}
+
+	if errSet := s.Set("userdID", user.ID); errSet != nil {
+		err = errSet
+	}
+	return
 }
+
+func IsLogged(r *http.Request, s mk_session.Session) (bool, error) {
+	isLogged, err := s.Get("isLogged")
+	if err != nil {
+		return false, err
+	}
+	if isLogged == "true" {
+		return true, nil
+	}
+	return false, nil
+}
+
+// func IsLogged(r *http.Request) (*http.Cookie, bool) {
+// 	var isLogged bool
+// 	cookie, errorCookie := r.Cookie("ticket_booking")
+
+// 	if errorCookie == nil {
+// 		isLogged = true
+// 	}
+
+// 	return cookie, isLogged
+// }

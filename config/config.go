@@ -3,6 +3,7 @@ package config
 import "golang.org/x/oauth2"
 
 // default DB section config
+const Driver string = "mysql"
 const User string = "root"
 const Host string = ""
 const DbName string = "ticket_booking"
@@ -17,3 +18,6 @@ var Endpoint oauth2.Endpoint = oauth2.Endpoint{
 	AuthURL:  "https://www.facebook.com/v2.11/dialog/oauth",
 	TokenURL: "https://graph.facebook.com/v2.11/oauth/access_token",
 }
+
+var FBState string = "MK_PRACTICE"
+var ServerRootDir string = "./public"

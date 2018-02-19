@@ -3,19 +3,22 @@ package models
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
+	"sync"
 )
 
 const BookTime int = 60
 
+type StatusCode int
+
 type EventPlaces struct {
-	Event          string   `json:"event"`
-	BookedPlaces   []string `json:"places"`
-	LastActedPlace string   `json:"lastActedPlace"`
-	Action         string   `json:"action"`
-	UserAddr       string   `json:"userAddr"`
-	ErrorCode      int      `json:"errorCode"`
+	*sync.Mutex
+	Event          string     `json:"event"`
+	BookedPlaces   []string   `json:"places"`
+	LastActedPlace string     `json:"lastActedPlace"`
+	Action         string     `json:"action"`
+	UserAddr       string     `json:"-"`
+	ErrorCode      StatusCode `json:"errorCode"`
 }
 
 type EventPlacesRow struct {
@@ -28,16 +31,15 @@ type EventPlacesRow struct {
 type EventPlacesTemplate struct {
 	EventPlacesRows []EventPlacesRow
 	EventID         int
-	Request         *http.Request
 	UserInfo        map[string]string
 }
 
 type EventSystemMessage struct {
-	Message        string `json:"sysMessage"`
-	MessageType    int    `json:"messageType"`
-	Event          string `json:"event"`
-	LastActedPlace string `json:"lastActedPlace"`
-	BookTime       int    `json:"bookTime"`
+	Message        string     `json:"sysMessage"`
+	MessageType    StatusCode `json:"messageType"`
+	Event          string     `json:"event"`
+	LastActedPlace string     `json:"lastActedPlace"`
+	BookTime       int        `json:"bookTime"`
 }
 
 func (db *DB) OccupiedPlacesInEvent() []EventPlacesRow {
@@ -84,7 +86,7 @@ func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
 	return templateRows
 }
 
-func (db *DB) ProcessPlace(places *EventPlaces, user string) int {
+func (db *DB) ProcessPlace(places *EventPlaces, user string) StatusCode {
 	var sqlStatement string
 	var isBooked int
 
@@ -142,7 +144,7 @@ func (db *DB) ProcessPlace(places *EventPlaces, user string) int {
 	return 0
 }
 
-func GetEventSystemMessage(code int, event string, place string) EventSystemMessage {
+func GetEventSystemMessage(code StatusCode, event string, place string) EventSystemMessage {
 	var message string
 
 	switch code {

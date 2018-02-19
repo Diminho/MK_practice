@@ -19,7 +19,7 @@ var testApp *WraperApp
 
 type mockDB struct{}
 
-func (mdb mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
+func (mdb *mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
 
 	templateRows := models.EventPlacesTemplate{}
 	templateRows.UserInfo = make(map[string]string)
@@ -31,39 +31,41 @@ func (mdb mockDB) AllPlacesInEvent() models.EventPlacesTemplate {
 	return templateRows
 }
 
-func (mdb mockDB) AddNewUser(user *models.User) error {
+func (mdb *mockDB) AddNewUser(user *models.User) error {
 	return nil
 }
 
-func (mdb mockDB) FindUserByEmail(email string) (models.User, error) {
+func (mdb *mockDB) FindUserByEmail(email string) (models.User, error) {
 	user := models.User{Name: "John", Email: "test@email.com", FacebookID: "000000", ID: "0007"}
 
 	return user, nil
 }
 
-func (mdb mockDB) Instance() models.Database {
-	return &mdb
+func (mdb *mockDB) Instance() func() models.Database {
+
+	return func() models.Database {
+		return mdb
+	}
 }
 
-func (mdb mockDB) OccupiedPlacesInEvent() []models.EventPlacesRow {
+func (mdb *mockDB) OccupiedPlacesInEvent() []models.EventPlacesRow {
 	return nil
 }
 
-func (mdb mockDB) ProcessPlace(places *models.EventPlaces, user string) int {
+func (mdb *mockDB) ProcessPlace(places *models.EventPlaces, user string) models.StatusCode {
 	return 0
 }
 
-func (mdb mockDB) UserExists(email string) bool {
-	return false
+func (mdb *mockDB) UserExists(email string) (bool, error) {
+	return false, nil
 }
 
 func init() {
 	testApp = &WraperApp{&app.App{
 		EventClients: make(map[string][]*websocket.Conn),
 		Broadcast:    make(chan models.EventPlaces),
-		Db:           mockDB{},
+		Db:           (&mockDB{}).Instance(),
 		SrvRootDir:   "../public",
-		Mu:           &sync.Mutex{},
 	}}
 
 }
@@ -86,7 +88,7 @@ func TestHandleEventWithCookies(t *testing.T) {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK %v", res.Status)
+		t.Errorf("expected status OK %s", res.Status)
 	}
 }
 
@@ -102,7 +104,7 @@ func TestHandleEvent(t *testing.T) {
 	}
 
 	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK %v", res.Status)
+		t.Errorf("expected status OK %s", res.Status)
 	}
 
 }
@@ -118,13 +120,13 @@ func TestHandleConnections(t *testing.T) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		t.Errorf("cannot make websocket connection: %v", err)
+		t.Fatalf("cannot make websocket connection: %v", err)
 	}
 
 	//first send to set event name
 	err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
 	if err != nil {
-		t.Errorf("cannot write message: %v", err)
+		t.Fatal("cannot write message: %v", err)
 	}
 
 	// var places models.EventPlaces
@@ -166,7 +168,7 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 
 	wg.Add(2)
 	// FIRST CLIENT
-	go func(wg *sync.WaitGroup) {
+	go func() {
 		defer wg.Done()
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
@@ -201,10 +203,10 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 			t.Errorf("expected %v , got %v", expected, gotEventSysMsg)
 		}
 		conn.Close()
-	}(&wg)
+	}()
 
 	// SECOND CLIENT
-	go func(wg *sync.WaitGroup) {
+	go func() {
 		defer wg.Done()
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
@@ -232,7 +234,7 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 			t.Errorf("expected %v , got %v", expected, got)
 		}
 		conn.Close()
-	}(&wg)
+	}()
 
 	wg.Wait()
 

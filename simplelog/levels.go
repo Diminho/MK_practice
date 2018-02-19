@@ -21,6 +21,15 @@ var levelNames = [...]string{
 	FatalLevel: "fatal",
 }
 
+var levelStrings = map[string]Level{
+	"debug":   DebugLevel,
+	"info":    InfoLevel,
+	"warn":    WarnLevel,
+	"warning": WarnLevel,
+	"error":   ErrorLevel,
+	"fatal":   FatalLevel,
+}
+
 // String implementation.
 func (l Level) String() string {
 	return levelNames[l]

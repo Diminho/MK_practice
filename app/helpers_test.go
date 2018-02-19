@@ -42,9 +42,7 @@ func TestInStringSliceFalse(t *testing.T) {
 }
 
 func TestIsLogged(t *testing.T) {
-
 	srv := httptest.NewServer(mk_server.LoadRoutes(testApp))
-
 	defer srv.Close()
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/event", srv.URL), nil)
@@ -58,7 +56,6 @@ func TestIsLogged(t *testing.T) {
 	if !ok {
 		t.Error("user is not logged")
 	}
-
 }
 
 func TestBuildUserIdentity(t *testing.T) {
@@ -69,5 +66,4 @@ func TestBuildUserIdentity(t *testing.T) {
 	if expectedUserID != gotUserID {
 		t.Errorf("expected %s, got %s", expectedUserID, gotUserID)
 	}
-
 }
