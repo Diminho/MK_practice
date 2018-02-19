@@ -42,28 +42,28 @@ type EventSystemMessage struct {
 	BookTime       int        `json:"bookTime"`
 }
 
-func (db *DB) OccupiedPlacesInEvent() []EventPlacesRow {
+func (db *DB) OccupiedPlacesInEvent() (eventRow []EventPlacesRow, err error) {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places where isBooked = 1 OR isBought = 1"
-	event := queryEvent(sqlStatement, db)
-
-	return event.EventPlacesRows
+	event, err := queryEvent(sqlStatement, db)
+	eventRow = event.EventPlacesRows
+	return
 }
 
-func (db *DB) AllPlacesInEvent() EventPlacesTemplate {
+func (db *DB) AllPlacesInEvent() (event EventPlacesTemplate, err error) {
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places"
-	event := queryEvent(sqlStatement, db)
+	event, err = queryEvent(sqlStatement, db)
 	event.UserInfo = make(map[string]string)
-	return event
+	return
 }
 
-func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
+func queryEvent(sqlStatement string, db *DB) (EventPlacesTemplate, error) {
+	templateRows := EventPlacesTemplate{}
 	rows, err := db.Query(sqlStatement)
 
 	if err != nil {
-		log.Fatal(err)
+		return templateRows, err
 	}
 
-	templateRows := EventPlacesTemplate{}
 	defer rows.Close()
 
 	for rows.Next() {
@@ -71,7 +71,7 @@ func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
 		err := rows.Scan(&eventPlacesRow.PlaceIdentity, &eventPlacesRow.IsBooked, &eventPlacesRow.IsBought, &eventPlacesRow.UserID, &templateRows.EventID)
 
 		if err != nil {
-			log.Fatal(err)
+			return templateRows, err
 		}
 
 		templateRows.EventPlacesRows = append(templateRows.EventPlacesRows, eventPlacesRow)
@@ -81,14 +81,14 @@ func queryEvent(sqlStatement string, db *DB) EventPlacesTemplate {
 
 	if err != nil {
 		log.Fatal(err)
+		return templateRows, err
 	}
 
-	return templateRows
+	return templateRows, nil
 }
 
-func (db *DB) ProcessPlace(places *EventPlaces, user string) StatusCode {
+func (db *DB) ProcessPlace(places *EventPlaces, user string) (StatusCode, error) {
 	var sqlStatement string
-	var isBooked int
 
 	switch places.Action {
 	case "buy":
@@ -104,27 +104,28 @@ func (db *DB) ProcessPlace(places *EventPlaces, user string) StatusCode {
 		stmt, err := db.Prepare(sqlStatement)
 
 		if err != nil {
-			log.Fatal(err)
+			return 1, err
 		}
 		_, err = stmt.Exec(args...)
 
 		if err != nil {
-			log.Fatal(err)
+			return 1, err
 		}
 		places.BookedPlaces = []string{}
 
-		return 0
+		return 0, nil
 	case "unbook":
 		sqlStatement = "UPDATE event_places set isBooked = 0, userId = '' WHERE placeIdentity = ?"
 	case "book":
+		var isBooked int
 		err := db.QueryRow("SELECT isBooked FROM event_places WHERE placeIdentity = ?", places.LastActedPlace).Scan(&isBooked)
 		if err != nil {
-			log.Fatal(err)
+			return 1, err
 		}
 
 		if isBooked == 1 {
 			//1 - code error - is a booked earlier by other user
-			return 1
+			return 1, nil
 		}
 		sqlStatement = "UPDATE event_places set isBooked = 1, userId = '" + user + "' WHERE placeIdentity = ?"
 	}
@@ -132,16 +133,16 @@ func (db *DB) ProcessPlace(places *EventPlaces, user string) StatusCode {
 	stmt, err := db.Prepare(sqlStatement)
 
 	if err != nil {
-		log.Fatal(err)
+		return 1, err
 	}
 
 	_, err = stmt.Exec(places.LastActedPlace)
 
 	if err != nil {
-		log.Fatal(err)
+		return 1, err
 	}
 
-	return 0
+	return 0, nil
 }
 
 func GetEventSystemMessage(code StatusCode, event string, place string) EventSystemMessage {

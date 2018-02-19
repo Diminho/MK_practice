@@ -8,13 +8,12 @@ import (
 const retriesNumber int = 3
 
 type Database interface {
-	OccupiedPlacesInEvent() []EventPlacesRow
-	AllPlacesInEvent() EventPlacesTemplate
-	ProcessPlace(*EventPlaces, string) StatusCode
+	OccupiedPlacesInEvent() ([]EventPlacesRow, error)
+	AllPlacesInEvent() (EventPlacesTemplate, error)
+	ProcessPlace(*EventPlaces, string) (StatusCode, error)
 	UserExists(string) (bool, error)
 	AddNewUser(*User) error
 	FindUserByEmail(string) (User, error)
-	// Instance() Database
 	Instance() func() Database
 }
 
@@ -33,6 +32,7 @@ func Connect(driver, dataSourceName string) (*DB, error) {
 	if err = db.Ping(); err != nil {
 		return nil, err
 	}
+
 	return &DB{DB: db, driver: driver, dsn: dataSourceName}, nil
 }
 
@@ -72,12 +72,12 @@ func (db *DB) Instance() func() Database {
 
 		return db
 	}
-
 }
 
 func (db *DB) isAlive() (bool, error) {
 	if err := db.Ping(); err != nil {
 		return false, err
 	}
+
 	return true, nil
 }

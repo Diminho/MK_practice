@@ -80,7 +80,6 @@ func (wApp *WraperApp) graceful(ctx context.Context, hs *http.Server, slog *simp
 	}
 
 	slog.Info("Server stopped")
-
 }
 
 func LoadRoutes(wApp *WraperApp) http.Handler {
@@ -183,9 +182,10 @@ func (wApp *WraperApp) handleFacebookLogin(w http.ResponseWriter, r *http.Reques
 }
 
 func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
-	// tmplData := wApp.Db.Instance().AllPlacesInEvent()
-	tmplData := wApp.Db().AllPlacesInEvent()
-
+	tmplData, err := wApp.Db().AllPlacesInEvent()
+	if err != nil {
+		wApp.Slog.Error(err)
+	}
 	session, err := wApp.Manager.SessionStart(w, r)
 	if err != nil {
 		wApp.Slog.Error(err)
@@ -259,10 +259,18 @@ func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request)
 		}
 
 		places.Lock()
-		places.ErrorCode = wApp.Db().ProcessPlace(&places, app.BuildUserIdentity(wsConn.RemoteAddr().String()))
+		places.ErrorCode, err = wApp.Db().ProcessPlace(&places, app.BuildUserIdentity(wsConn.RemoteAddr().String()))
 		places.Unlock()
 
-		occupied := wApp.Db().OccupiedPlacesInEvent()
+		if err != nil {
+			wApp.Slog.Error(err)
+		}
+
+		occupied, err := wApp.Db().OccupiedPlacesInEvent()
+
+		if err != nil {
+			wApp.Slog.Error(err)
+		}
 
 		existing := make(map[string]struct{})
 		for _, occupiedPlace := range occupied {

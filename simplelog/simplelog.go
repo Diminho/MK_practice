@@ -6,7 +6,9 @@ package simplelog
 // logger.Info("JUST MESSAGE")
 
 import (
+	"fmt"
 	"io"
+	stdlog "log"
 	"os"
 	"sync"
 	"time"
@@ -75,68 +77,69 @@ func (l *Log) WithFields(fields Fields) *Record {
 	return record
 }
 
-func (r *Record) Info(message string) {
-	log.log(InfoLevel, r, message)
+func (r *Record) Info(message interface{}) {
+	log.log(InfoLevel, r, fmt.Sprintf("%v", message))
 }
 
 //log just message without fields
-func (l *Log) Info(message string) {
+func (l *Log) Info(message interface{}) {
 
-	log.log(InfoLevel, NewRecord(), message)
+	log.log(InfoLevel, NewRecord(), fmt.Sprintf("%v", message))
 }
 
-func (r *Record) Trace(message string) {
-	log.log(TraceLevel, r, message)
-}
-
-//log just message without fields
-func (l *Log) Trace(message string) {
-	log.log(TraceLevel, NewRecord(), message)
-}
-
-func (r *Record) Debug(message string) {
-	log.log(DebugLevel, r, message)
+func (r *Record) Trace(message interface{}) {
+	log.log(TraceLevel, r, fmt.Sprintf("%v", message))
 }
 
 //log just message without fields
-func (l *Log) Debug(message string) {
-	log.log(DebugLevel, NewRecord(), message)
+func (l *Log) Trace(message interface{}) {
+	log.log(TraceLevel, NewRecord(), fmt.Sprintf("%v", message))
 }
 
-func (r *Record) Warn(message string) {
-	log.log(WarnLevel, r, message)
-}
-
-//log just message without fields
-func (l *Log) Warn(message string) {
-	log.log(WarnLevel, NewRecord(), message)
-}
-
-func (r *Record) Error(err error) {
-	log.log(ErrorLevel, r, err.Error())
+func (r *Record) Debug(message interface{}) {
+	log.log(DebugLevel, r, fmt.Sprintf("%v", message))
 }
 
 //log just message without fields
-func (l *Log) Error(err error) {
-	log.log(ErrorLevel, NewRecord(), err.Error())
+func (l *Log) Debug(message interface{}) {
+	log.log(DebugLevel, NewRecord(), fmt.Sprintf("%v", message))
 }
 
-func (r *Record) Fatal(err error) {
-	log.log(FatalLevel, r, err.Error())
+func (r *Record) Warn(message interface{}) {
+	log.log(WarnLevel, r, fmt.Sprintf("%v", message))
+}
+
+//log just message without fields
+func (l *Log) Warn(message interface{}) {
+	log.log(WarnLevel, NewRecord(), fmt.Sprintf("%v", message))
+}
+
+func (r *Record) Error(err interface{}) {
+	log.log(ErrorLevel, r, fmt.Sprintf("%v", err))
+}
+
+//log just message without fields
+func (l *Log) Error(err interface{}) {
+	log.log(ErrorLevel, NewRecord(), fmt.Sprintf("%v", err))
+}
+
+func (r *Record) Fatal(err interface{}) {
+	log.log(FatalLevel, r, fmt.Sprintf("%v", err))
 	os.Exit(1)
 }
 
 //log just message without fields
-func (l *Log) Fatal(err error) {
-	log.log(FatalLevel, NewRecord(), err.Error())
+func (l *Log) Fatal(err interface{}) {
+	log.log(FatalLevel, NewRecord(), fmt.Sprintf("%v", err))
 	os.Exit(1)
 }
 
 func (l *Log) log(lvl Level, r *Record, msg string) {
 	if l.isolationLevel <= lvl {
-		l.handler.HandleLog(r.prepare(lvl, msg))
+		if err := l.handler.HandleLog(r.prepare(lvl, msg)); err != nil {
+			stdlog.Println("error logging %v", err)
+		}
 	}
-
 }
 
 func (r *Record) prepare(lvl Level, msg string) *Record {
