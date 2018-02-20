@@ -44,23 +44,22 @@ func (mng *Manager) SessionStart(w http.ResponseWriter, r *http.Request) (ins *I
 
 	if errNoCookie == nil {
 		ins.sessID = cookie.Value
+		ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
+		err = ins.provider.Init()
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		ins.sessID = NewSessionID()
 		cookie := http.Cookie{Name: mng.cookieName, Value: ins.sessID, Expires: (time.Now().Add(time.Duration(mng.maxLifeTime) * time.Second))}
 		http.SetCookie(w, &cookie)
-	}
+		ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
+		//delete session when time expires
+		go func() {
+			time.AfterFunc(time.Duration(mng.maxLifeTime)*time.Second, func() { ins.provider.EraseByExpiration() })
+		}()
 
-	// FileProvider is default provider.
-	ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
-	err = ins.provider.Init()
-	if err != nil {
-		return nil, err
 	}
-
-	//delete session when time expires
-	go func() {
-		time.AfterFunc(time.Duration(mng.maxLifeTime)*time.Second, func() { ins.provider.EraseByExpiration() })
-	}()
 
 	return
 }
