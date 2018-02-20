@@ -1,15 +1,17 @@
 package mk_server
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Diminho/MK_practice/mk_session"
 	"github.com/Diminho/MK_practice/models"
@@ -22,7 +24,9 @@ import (
 
 var testApp *WraperApp
 
-type mockDB struct{}
+type mockDB struct {
+	fieldToTestNegativeCase bool
+}
 
 func (mdb *mockDB) AllPlacesInEvent() (models.EventPlacesTemplate, error) {
 
@@ -33,6 +37,9 @@ func (mdb *mockDB) AllPlacesInEvent() (models.EventPlacesTemplate, error) {
 	eventPlacesRows = append(eventPlacesRows, models.EventPlacesRow{"seat2", 0, 0, "user2"})
 	templateRows.EventPlacesRows = eventPlacesRows
 
+	if mdb.fieldToTestNegativeCase {
+		return templateRows, errors.New("testerror")
+	}
 	return templateRows, nil
 }
 
@@ -65,7 +72,64 @@ func (mdb *mockDB) UserExists(email string) (bool, error) {
 	return false, nil
 }
 
-func init() {
+func initApp(out io.Writer, negativeCase bool) *WraperApp {
+
+	slog := simplelog.NewLog(out)
+
+	testApp = &WraperApp{&app.App{
+		EventClients: make(map[string][]*websocket.Conn),
+		Broadcast:    make(chan models.EventPlaces),
+		Db:           (&mockDB{fieldToTestNegativeCase: negativeCase}).Instance(),
+		SrvRootDir:   "../public",
+		Manager:      mk_session.NewManager("sessionTestID", 5),
+		Slog:         slog,
+	}}
+	return testApp
+}
+
+func TestHandleEvent(t *testing.T) {
+	file, err := os.OpenFile("log_test.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal("Failed to open log file: ", err)
+	}
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
+
+	t.Run("Testing just response", func(t *testing.T) {
+
+		srv := httptest.NewServer(LoadRoutes(initApp(file, false)))
+
+		defer srv.Close()
+
+		res, err := http.Get(fmt.Sprintf("%s/event", srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assert.Equal(t, res.StatusCode, http.StatusOK, "StatusCode is not 200", res.Status)
+	})
+	t.Run("Testing just response- negative", func(t *testing.T) {
+
+		srv := httptest.NewServer(LoadRoutes(initApp(file, true)))
+
+		defer srv.Close()
+
+		res, err := http.Get(fmt.Sprintf("%s/event", srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assert.Equal(t, res.StatusCode, http.StatusOK, "StatusCode is not 200", res.Status)
+	})
+	//wait until session files will be deleted
+	time.Sleep(5 * time.Second)
+}
+
+func TestHandleConnections(t *testing.T) {
 
 	file, err := os.OpenFile("log_test.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
@@ -78,57 +142,7 @@ func init() {
 		}
 	}()
 
-	slog := simplelog.NewLog(file)
-
-	testApp = &WraperApp{&app.App{
-		EventClients: make(map[string][]*websocket.Conn),
-		Broadcast:    make(chan models.EventPlaces),
-		Db:           (&mockDB{}).Instance(),
-		SrvRootDir:   "../public",
-		Manager:      mk_session.NewManager("sessionTestID", 30),
-		Slog:         slog,
-	}}
-
-}
-
-func TestHandleEventWithCookies(t *testing.T) {
-
-	srv := httptest.NewServer(LoadRoutes(testApp))
-
-	defer srv.Close()
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/event", srv.URL), nil)
-
-	req.AddCookie(&http.Cookie{Name: "ticket_booking", Value: "user_1"})
-
-	var client = &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		t.Errorf("err: %v", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK %s", res.Status)
-	}
-}
-
-func TestHandleEvent(t *testing.T) {
-
-	srv := httptest.NewServer(LoadRoutes(testApp))
-
-	defer srv.Close()
-
-	res, err := http.Get(fmt.Sprintf("%s/event", srv.URL))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, res.StatusCode, http.StatusOK, "StatusCode is not 200", res.Status)
-}
-
-func TestHandleConnections(t *testing.T) {
-	srv := httptest.NewServer(LoadRoutes(testApp))
+	srv := httptest.NewServer(LoadRoutes(initApp(file, false)))
 	defer srv.Close()
 
 	go testApp.handlePlaceBookings()
@@ -136,73 +150,22 @@ func TestHandleConnections(t *testing.T) {
 	u, _ := url.Parse(fmt.Sprintf("%s/ws", srv.URL))
 	u.Scheme = "ws"
 
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	if err != nil {
-		t.Fatalf("cannot make websocket connection: %v", err)
-	}
-
-	//first send to set event name
-	err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
-	if err != nil {
-		t.Fatal("cannot write message: %v", err)
-	}
-
-	// var places models.EventPlaces
-	var gotEventSysMsg models.EventSystemMessage
-
-	input := models.EventPlaces{Event: "test_event", BookedPlaces: []string{"seat_6"}, Action: "book", LastActedPlace: "seat_6"}
-
-	err = conn.WriteJSON(input)
-	if err != nil {
-		t.Errorf("cannot write message: %v", err)
-	}
-	err = conn.ReadJSON(&gotEventSysMsg)
-
-	if err != nil {
-		t.Errorf("cannot read message: %v", err)
-	}
-
-	expected := models.EventSystemMessage{Message: "Success", MessageType: 0, Event: "test_event", LastActedPlace: "seat_6", BookTime: 60}
-
-	if !reflect.DeepEqual(expected, gotEventSysMsg) {
-		fmt.Println("equal")
-		t.Errorf("expected %v , got %v", expected, gotEventSysMsg)
-	}
-
-	conn.Close()
-
-}
-func TestHandleConnectionsWithOtherClients(t *testing.T) {
-	//setting up server
-	srv := httptest.NewServer(LoadRoutes(testApp))
-	defer srv.Close()
-
-	go testApp.handlePlaceBookings()
-
-	u, _ := url.Parse(fmt.Sprintf("%s/ws", srv.URL))
-	u.Scheme = "ws"
-
-	var wg sync.WaitGroup
-
-	wg.Add(2)
-	// FIRST CLIENT
-	go func() {
-		defer wg.Done()
+	t.Run("test_self_connection", func(t *testing.T) {
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
-			t.Errorf("cannot make websocket connection: %v", err)
+			t.Fatalf("cannot make websocket connection: %v", err)
 		}
 
 		//first send to set event name
 		err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
 		if err != nil {
-			t.Errorf("cannot write message: %v", err)
+			t.Fatal("cannot write message: %v", err)
 		}
 
 		// var places models.EventPlaces
 		var gotEventSysMsg models.EventSystemMessage
 
-		input := models.EventPlaces{Event: "test_event", BookedPlaces: []string{"seat_5"}, Action: "book", LastActedPlace: "seat_5"}
+		input := models.EventPlaces{Event: "test_event", BookedPlaces: []string{"seat_6"}, Action: "book", LastActedPlace: "seat_6"}
 
 		err = conn.WriteJSON(input)
 		if err != nil {
@@ -214,46 +177,81 @@ func TestHandleConnectionsWithOtherClients(t *testing.T) {
 			t.Errorf("cannot read message: %v", err)
 		}
 
-		expected := models.EventSystemMessage{Message: "Success", MessageType: 0, Event: "test_event", LastActedPlace: "seat_5", BookTime: 60}
+		expected := models.EventSystemMessage{Message: "Success", MessageType: 0, Event: "test_event", LastActedPlace: "seat_6", BookTime: 60}
 
-		if !reflect.DeepEqual(expected, gotEventSysMsg) {
-			fmt.Println("equal")
-			t.Errorf("expected %v , got %v", expected, gotEventSysMsg)
-		}
+		assert.Equal(t, expected, gotEventSysMsg, "should be equal")
+
 		conn.Close()
-	}()
+	})
 
-	// SECOND CLIENT
-	go func() {
-		defer wg.Done()
-		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-		if err != nil {
-			t.Errorf("cannot make websocket connection: %v", err)
-		}
+	t.Run("test connection with clients", func(t *testing.T) {
+		var wg sync.WaitGroup
 
-		//first send to set event name
-		err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
-		if err != nil {
-			t.Errorf("cannot write message: %v", err)
-		}
+		wg.Add(2)
+		// FIRST CLIENT
+		go func() {
+			defer wg.Done()
+			conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+			if err != nil {
+				t.Errorf("cannot make websocket connection: %v", err)
+			}
 
-		var got models.EventPlaces
-		err = conn.ReadJSON(&got)
-		if err != nil {
-			t.Errorf("cannot read message: %v", err)
-		}
-		fmt.Printf("success: received response: %v\n", got)
+			//first send to set event name
+			err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
+			if err != nil {
+				t.Errorf("cannot write message: %v", err)
+			}
 
-		expected := models.EventPlaces{BookedPlaces: []string{"seat_5"}, Event: "test_event", LastActedPlace: "seat_5", Action: "book"}
-		// we dont want to comtare user remote address
-		got.UserAddr = ""
-		if !reflect.DeepEqual(expected, got) {
-			fmt.Println("equal")
-			t.Errorf("expected %v , got %v", expected, got)
-		}
-		conn.Close()
-	}()
+			// var places models.EventPlaces
+			var gotEventSysMsg models.EventSystemMessage
 
-	wg.Wait()
+			input := models.EventPlaces{Event: "test_event", BookedPlaces: []string{"seat_5"}, Action: "book", LastActedPlace: "seat_5"}
 
+			err = conn.WriteJSON(input)
+			if err != nil {
+				t.Errorf("cannot write message: %v", err)
+			}
+			err = conn.ReadJSON(&gotEventSysMsg)
+
+			if err != nil {
+				t.Errorf("cannot read message: %v", err)
+			}
+
+			expected := models.EventSystemMessage{Message: "Success", MessageType: 0, Event: "test_event", LastActedPlace: "seat_5", BookTime: 60}
+
+			assert.Equal(t, expected, gotEventSysMsg, "should be equal")
+			conn.Close()
+		}()
+
+		// SECOND CLIENT
+		go func() {
+			defer wg.Done()
+			conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+			if err != nil {
+				t.Errorf("cannot make websocket connection: %v", err)
+			}
+
+			//first send to set event name
+			err = conn.WriteMessage(websocket.BinaryMessage, []byte(`test_event`))
+			if err != nil {
+				t.Errorf("cannot write message: %v", err)
+			}
+
+			var got models.EventPlaces
+			err = conn.ReadJSON(&got)
+			if err != nil {
+				t.Errorf("cannot read message: %v", err)
+			}
+			fmt.Printf("success: received response: %v\n", got)
+
+			expected := models.EventPlaces{BookedPlaces: []string{"seat_5"}, Event: "test_event", LastActedPlace: "seat_5", Action: "book"}
+			// we dont want to comtare user remote address
+			got.UserAddr = ""
+
+			assert.Equal(t, expected, got, "should be equal")
+			conn.Close()
+		}()
+
+		wg.Wait()
+	})
 }

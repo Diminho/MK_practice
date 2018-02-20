@@ -183,6 +183,7 @@ func (wApp *WraperApp) handleFacebookLogin(w http.ResponseWriter, r *http.Reques
 
 func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
 	tmplData, err := wApp.Db().AllPlacesInEvent()
+
 	if err != nil {
 		wApp.Slog.Error(err)
 	}
