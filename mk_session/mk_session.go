@@ -51,7 +51,7 @@ func (mng *Manager) SessionStart(w http.ResponseWriter, r *http.Request) (ins *I
 	}
 
 	// FileProvider is default provider.
-	ins.SetProvider(&FileProvider{filename: "sess_" + ins.sessID})
+	ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
 	err = ins.provider.Init()
 	if err != nil {
 		return nil, err

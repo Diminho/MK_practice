@@ -52,7 +52,6 @@ func NewServer(app *app.App) {
 
 		}
 	}()
-
 	var gracefulShut = make(chan os.Signal, 1)
 	signal.Notify(gracefulShut, os.Interrupt, syscall.SIGTERM)
 
@@ -78,6 +77,7 @@ func (wApp *WraperApp) graceful(ctx context.Context, hs *http.Server, slog *simp
 	if err := hs.Shutdown(ctx); err != nil {
 		slog.Error(err)
 	}
+	app.RemoveContents("./tmp/")
 
 	slog.Info("Server stopped")
 }
