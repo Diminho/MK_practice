@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 type Session interface {
@@ -40,25 +42,30 @@ func NewManager(cookieName string, maxLifeTime int) *Manager {
 
 func (mng *Manager) SessionStart(w http.ResponseWriter, r *http.Request) (ins *Instance, err error) {
 	ins = &Instance{}
-	cookie, errNoCookie := r.Cookie(mng.cookieName)
+	cookie, err := r.Cookie(mng.cookieName)
+	if err != nil && err != http.ErrNoCookie {
+		return nil, errors.Wrap(err, "cannot get cookie")
+	}
 
-	if errNoCookie == nil {
-		ins.sessID = cookie.Value
-		ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
-		err = ins.provider.Init()
-		if err != nil {
-			return nil, err
-		}
-	} else {
+	if err == http.ErrNoCookie {
 		ins.sessID = NewSessionID()
-		cookie := http.Cookie{Name: mng.cookieName, Value: ins.sessID, Expires: (time.Now().Add(time.Duration(mng.maxLifeTime) * time.Second))}
+		cookie := http.Cookie{Name: mng.cookieName, Value: ins.sessID, Expires: time.Now().Add(time.Duration(mng.maxLifeTime) * time.Second)}
 		http.SetCookie(w, &cookie)
 		ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
-		//delete session when time expires
-		go func() {
-			time.AfterFunc(time.Duration(mng.maxLifeTime)*time.Second, func() { ins.provider.EraseByExpiration() })
-		}()
 
+		//delete session when time expires
+		_ = time.AfterFunc(time.Duration(mng.maxLifeTime)*time.Second, func() { ins.provider.EraseByExpiration() })
+		return
+	}
+
+	ins.sessID = cookie.Value
+	// TODO: Use filepath pkg
+	// TODO: use os.TempDir()
+	// TODO: autoprefix
+	ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
+	err = ins.provider.Init()
+	if err != nil {
+		return nil, err
 	}
 
 	return
@@ -69,18 +76,13 @@ func (ins *Instance) SetProvider(p Provider) {
 }
 
 func (ins *Instance) Set(key string, value interface{}) error {
-	err := ins.provider.Save(key, value)
-
-	if err != nil {
-		log.Println(err)
-	}
-
-	return err
+	return errors.Wrap(ins.provider.Save(key, value), "cannot save value")
 }
 
 func (ins *Instance) Delete(key string) error {
 	err := ins.provider.Delete(key)
 
+	// TODO: Wrap & extra if
 	if err != nil {
 		log.Println(err)
 	}

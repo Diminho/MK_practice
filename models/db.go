@@ -29,6 +29,7 @@ func Connect(driver, dataSourceName string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err = db.Ping(); err != nil {
 		return nil, err
 	}
@@ -38,7 +39,6 @@ func Connect(driver, dataSourceName string) (*DB, error) {
 
 func (db *DB) Instance() func() Database {
 	return func() Database {
-		var connected bool
 		connected, err := db.isAlive()
 		if err != nil {
 			panic(err)
@@ -51,6 +51,7 @@ func (db *DB) Instance() func() Database {
 			if err != nil {
 				panic(err)
 			}
+
 			time.Sleep(3 * time.Second)
 			db, err = Connect(db.driver, db.dsn)
 			if err != nil {

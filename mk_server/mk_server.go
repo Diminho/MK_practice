@@ -33,24 +33,24 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func NewServer(app *app.App) {
+func NewServer(ctx context.Context, app *app.App) {
 
 	wApp := &WraperApp{app}
 
 	s := &http.Server{Addr: ":8000", Handler: LoadRoutes(wApp)}
 
+	// TODO: handle stop
 	go wApp.handlePlaceBookings()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
 		wApp.Slog.Info("Server running on port :8000")
 
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			wApp.Slog.Error(err)
-			cancel()
-
 		}
+		cancel()
 	}()
 	var gracefulShut = make(chan os.Signal, 1)
 	signal.Notify(gracefulShut, os.Interrupt, syscall.SIGTERM)
@@ -65,18 +65,19 @@ func NewServer(app *app.App) {
 }
 
 func (wApp *WraperApp) graceful(ctx context.Context, hs *http.Server, slog *simplelog.Log) {
-	for event := range wApp.EventClients {
-		for _, client := range wApp.EventClients[event] {
+	for _, events := range wApp.EventClients {
+		for _, client := range events {
 			if err := client.Close(); err != nil {
 				slog.Error(err)
 			}
 		}
-		delete(wApp.EventClients, event)
 	}
 
+	// TODO: timeout
 	if err := hs.Shutdown(ctx); err != nil {
 		slog.Error(err)
 	}
+	// TODO: TempDir
 	app.RemoveContents("./tmp/")
 
 	slog.Info("Server stopped")
@@ -289,6 +290,7 @@ func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// TODO: wg/ctx
 func (wApp *WraperApp) handlePlaceBookings() {
 	for places := range wApp.Broadcast {
 		fmt.Println(wApp.EventClients[places.Event])
