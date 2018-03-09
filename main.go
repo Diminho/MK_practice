@@ -16,9 +16,6 @@ import (
 )
 
 func main() {
-
-	fmt.Println(os.TempDir())
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
