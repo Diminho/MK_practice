@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -77,20 +76,15 @@ func (wApp *WraperApp) graceful(ctx context.Context, hs *http.Server, slog *simp
 	if err := hs.Shutdown(ctx); err != nil {
 		slog.Error(err)
 	}
+
 	close(wApp.Broadcast)
-	// app.RemoveContents("./tmp/")
 	app.RemoveContents(os.TempDir())
 
 	slog.Info("Server stopped")
 }
 
 func LoadRoutes(wApp *WraperApp) http.Handler {
-	absSrvRootDir, err := filepath.Abs(wApp.SrvRootDir)
-	if err != nil {
-		wApp.Slog.Error(err)
-	}
-	//need this assignemt since wApp.AbsSrvRootDir is used in application
-	wApp.AbsSrvRootDir = absSrvRootDir
+
 	fs := http.FileServer(http.Dir(wApp.AbsSrvRootDir))
 	mux := http.NewServeMux()
 	mux.Handle("/", fs)
@@ -215,7 +209,7 @@ func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
 		tmplData.UserInfo["id"] = user.ID
 	}
 
-	app.PopulateTemplate(tmplData, w, fmt.Sprintf("%s/event.html", wApp.AbsSrvRootDir))
+	app.PopulateTemplate(wApp.Tmpl, tmplData, w, "event")
 }
 
 func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request) {

@@ -32,21 +32,27 @@ func main() {
 	slog := simplelog.NewLog(file)
 
 	db, err := models.Connect(config.Driver, fmt.Sprintf("%s:@%s/%s", config.User, config.Host, config.DbName))
+
 	if err != nil {
 		slog.Fatal(err)
 	}
 
-	mk_server.NewServer(ctx,
-		app.NewApp(
-			slog,
-			&oauth2.Config{
-				ClientID:     config.ClientID,
-				ClientSecret: config.ClientSecret,
-				RedirectURL:  config.RedirectURL,
-				Scopes:       config.Scopes,
-				Endpoint:     config.Endpoint,
-			},
-			config.FBState,
-			config.ServerRootDir,
-			db.Instance()))
+	app, err := app.NewApp(
+		slog,
+		&oauth2.Config{
+			ClientID:     config.ClientID,
+			ClientSecret: config.ClientSecret,
+			RedirectURL:  config.RedirectURL,
+			Scopes:       config.Scopes,
+			Endpoint:     config.Endpoint,
+		},
+		config.FBState,
+		config.ServerRootDir,
+		db.Instance())
+
+	if err != nil {
+		slog.Fatal(err)
+	}
+
+	mk_server.NewServer(ctx, app)
 }

@@ -2,7 +2,6 @@ package models
 
 import (
 	"database/sql"
-	"log"
 )
 
 type User struct {
@@ -44,8 +43,9 @@ func (db *DB) AddNewUser(user *User) error {
 		return db.Error
 	}
 	stmt, err := db.Prepare("INSERT INTO users(name, email, facebookId) VALUES(?, ?, ?)")
+
 	if err != nil {
-		log.Println(err)
+		return err
 	}
 	_, err = stmt.Exec(user.Name, user.Email, user.FacebookID)
 

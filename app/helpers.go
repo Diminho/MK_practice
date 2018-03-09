@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Diminho/MK_practice/models"
 
@@ -14,17 +15,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func PopulateTemplate(data interface{}, w http.ResponseWriter, tmplFile string) {
-	tmpl, err := template.ParseFiles(tmplFile)
-
-	if err != nil {
-		fmt.Errorf("error %v", err)
-	}
-
-	if tmpl != nil {
-		tmpl.Execute(w, data)
-	}
-
+func PopulateTemplate(tmpl *template.Template, data interface{}, w http.ResponseWriter, tmplName string) {
+	tmpl.ExecuteTemplate(w, tmplName, data)
 }
 
 func InStringSlice(input []string, needle string) bool {
@@ -105,4 +97,22 @@ func RemoveContents(dir string) error {
 		}
 	}
 	return nil
+}
+
+func ParseTemplates(dir string) (*template.Template, error) {
+	var err error
+	tmpl := template.New("")
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if strings.Contains(path, ".html") {
+			_, err = tmpl.ParseFiles(path)
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return err
+	})
+
+	return tmpl, err
 }
