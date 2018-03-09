@@ -2,9 +2,10 @@ package mk_session
 
 import (
 	"encoding/gob"
-	"log"
 	"os"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 type FileProvider struct {
@@ -13,32 +14,28 @@ type FileProvider struct {
 	expirationTime time.Time
 }
 
-func (fp *FileProvider) Init() error {
+func (fp *FileProvider) Init() (err error) {
 	file, err := os.OpenFile(fp.filename, os.O_CREATE, 0666)
 
 	if err != nil {
-		log.Println("Failed to open log file: ", err)
+		return
 	}
+
 	defer func() {
-		err := file.Close()
-		if err != nil {
-			log.Println(err)
-		}
+		err = file.Close()
 	}()
-	return err
+
+	return
 }
 
-func (fp *FileProvider) Save(key string, value interface{}) error {
+func (fp *FileProvider) Save(key string, value interface{}) (err error) {
 	file, err := os.OpenFile(fp.filename, os.O_RDWR|os.O_APPEND, 0666)
 
 	if err != nil {
-		log.Println("Failed to open log file: ", err)
+		return errors.Wrap(err, "cannot create session file")
 	}
 	defer func() {
-		err := file.Close()
-		if err != nil {
-			log.Println(err)
-		}
+		err = file.Close()
 	}()
 
 	data := make(map[string]interface{})
@@ -51,53 +48,46 @@ func (fp *FileProvider) Save(key string, value interface{}) error {
 	data[key] = value
 
 	encoder := gob.NewEncoder(file)
-	if err := encoder.Encode(data); err != nil {
-		log.Println(err)
-	}
+	err = encoder.Encode(data)
+
 	return err
 }
 
-func (fp *FileProvider) Read(key string) (interface{}, error) {
-	var err error
+func (fp *FileProvider) Read(key string) (value interface{}, err error) {
 	file, err := os.OpenFile(fp.filename, os.O_RDONLY, 0666)
 
 	if err != nil {
-		log.Println("Failed to open log file: ", err)
+		return value, errors.Wrap(err, "cannot open session file")
 	}
 
 	defer func() {
 		err = file.Close()
-		if err != nil {
-			log.Println(err)
-		}
 	}()
 
 	data := make(map[string]interface{})
 
 	decoder := gob.NewDecoder(file)
 	err = decoder.Decode(&data)
+
 	if err != nil {
-		log.Println(err)
+		return
 	}
 
-	return data[key], err
+	value = data[key]
 
+	return value, err
 }
 
-func (fp *FileProvider) Delete(key string) error {
-	var err error
+func (fp *FileProvider) Delete(key string) (err error) {
 
 	file, err := os.OpenFile(fp.filename, os.O_RDWR, 0666)
 
 	if err != nil {
-		log.Println("Failed to open log file: ", err)
+		return errors.Wrap(err, "cannot open session file")
 	}
 
 	defer func() {
-		err := file.Close()
-		if err != nil {
-			log.Println(err)
-		}
+		err = file.Close()
 	}()
 
 	data := make(map[string]interface{})
@@ -109,16 +99,16 @@ func (fp *FileProvider) Delete(key string) error {
 	delete(data, key)
 
 	encoder := gob.NewEncoder(file)
-	if err := encoder.Encode(data); err != nil {
-		log.Println(err)
-	}
+	err = encoder.Encode(data)
 
 	return err
 }
 
-func (fp *FileProvider) EraseByExpiration() {
-	err := os.Remove(fp.filename)
-	if err != nil {
-		log.Println("Failed to remove file: ", err)
-	}
+func (fp *FileProvider) EraseByExpiration() (err error) {
+	err = os.Remove(fp.filename)
+	return
+}
+
+func generateSessFilename(sessID string) string {
+	return os.TempDir() + "/sess_" + sessID
 }

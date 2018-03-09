@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -15,7 +16,11 @@ import (
 )
 
 func main() {
-	// os.RemoveAll("/tmp/")
+
+	fmt.Println(os.TempDir())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatal("Failed to open log file: ", err)
@@ -34,7 +39,7 @@ func main() {
 		slog.Fatal(err)
 	}
 
-	mk_server.NewServer(
+	mk_server.NewServer(ctx,
 		app.NewApp(
 			slog,
 			&oauth2.Config{

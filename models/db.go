@@ -21,6 +21,7 @@ type DB struct {
 	*sql.DB
 	driver string
 	dsn    string
+	Error  error
 }
 
 func Connect(driver, dataSourceName string) (*DB, error) {
@@ -41,7 +42,7 @@ func (db *DB) Instance() func() Database {
 		var connected bool
 		connected, err := db.isAlive()
 		if err != nil {
-			panic(err)
+			db.Error = err
 		}
 
 		retriesLeft := retriesNumber
@@ -49,21 +50,21 @@ func (db *DB) Instance() func() Database {
 		for connected != true { // reconnect if we lost connection
 			err := db.Close()
 			if err != nil {
-				panic(err)
+				db.Error = err
 			}
 			time.Sleep(3 * time.Second)
 			db, err = Connect(db.driver, db.dsn)
 			if err != nil {
-				panic(err)
+				db.Error = err
 			}
 			connected, err = db.isAlive()
 			if err != nil {
-				panic(err)
+				db.Error = err
 			}
 			if retriesLeft == 0 {
 				err := db.Close()
 				if err != nil {
-					panic(err)
+					db.Error = err
 				}
 				break
 			}
