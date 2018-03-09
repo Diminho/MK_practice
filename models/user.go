@@ -22,10 +22,9 @@ func (db *DB) UserExists(email string) (bool, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			isExists = false
-		} else {
-			log.Println(err)
 		}
 	}
+
 	return isExists, err
 }
 
@@ -49,8 +48,6 @@ func (db *DB) AddNewUser(user *User) error {
 		log.Println(err)
 	}
 	_, err = stmt.Exec(user.Name, user.Email, user.FacebookID)
-	if err != nil {
-		log.Println(err)
-	}
+
 	return err
 }

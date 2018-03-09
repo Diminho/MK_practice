@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 )
@@ -86,7 +85,6 @@ func queryEvent(sqlStatement string, db *DB) (EventPlacesTemplate, error) {
 	err = rows.Err()
 
 	if err != nil {
-		log.Fatal(err)
 		return templateRows, err
 	}
 
