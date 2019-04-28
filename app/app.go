@@ -1,6 +1,9 @@
 package app
 
 import (
+	"html/template"
+	"path/filepath"
+
 	"github.com/Diminho/MK_practice/mk_session"
 
 	"github.com/Diminho/MK_practice/models"
@@ -19,9 +22,23 @@ type App struct {
 	SrvRootDir     string
 	AbsSrvRootDir  string
 	Manager        *mk_session.Manager
+	Tmpl           *template.Template
 }
 
-func NewApp(slog *simplelog.Log, fbConfigOauth *oauth2.Config, FBState string, SrvRootDir string, instance func() models.Database) *App {
+func NewApp(slog *simplelog.Log, fbConfigOauth *oauth2.Config, FBState string, SrvRootDir string, instance func() models.Database) (*App, error) {
+
+	absSrvRootDir, err := filepath.Abs(SrvRootDir)
+
+	if err != nil {
+		slog.Error(err)
+	}
+
+	tmpl, err := ParseTemplates(absSrvRootDir)
+
+	if err != nil {
+		return nil, err
+	}
+
 	app := &App{
 		EventClients:   make(map[string][]*websocket.Conn),
 		Broadcast:      make(chan models.EventPlaces, 1),
@@ -31,7 +48,9 @@ func NewApp(slog *simplelog.Log, fbConfigOauth *oauth2.Config, FBState string, S
 		Slog:           slog,
 		SrvRootDir:     SrvRootDir,
 		Manager:        mk_session.NewManager("sessionID", 60),
+		AbsSrvRootDir:  absSrvRootDir,
+		Tmpl:           tmpl,
 	}
 
-	return app
+	return app, err
 }

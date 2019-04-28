@@ -4,9 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"io"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 type Session interface {
@@ -25,7 +26,7 @@ type Provider interface {
 	Save(string, interface{}) error
 	Read(string) (interface{}, error)
 	Delete(key string) error
-	EraseByExpiration()
+	EraseByExpiration() error
 	Init() error
 }
 
@@ -40,26 +41,27 @@ func NewManager(cookieName string, maxLifeTime int) *Manager {
 
 func (mng *Manager) SessionStart(w http.ResponseWriter, r *http.Request) (ins *Instance, err error) {
 	ins = &Instance{}
-	cookie, errNoCookie := r.Cookie(mng.cookieName)
 
-	if errNoCookie == nil {
-		ins.sessID = cookie.Value
-		ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
+	cookie, err := r.Cookie(mng.cookieName)
+	if err != nil && err != http.ErrNoCookie {
+		return nil, errors.Wrap(err, "cannot get cookie")
+	}
+
+	if err == http.ErrNoCookie {
+		ins.sessID = NewSessionID()
+		cookie := http.Cookie{Name: mng.cookieName, Value: ins.sessID, Expires: (time.Now().Add(time.Duration(mng.maxLifeTime) * time.Second))}
+		http.SetCookie(w, &cookie)
+		ins.SetProvider(&FileProvider{filename: generateSessFilename(ins.sessID)})
 		err = ins.provider.Init()
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		ins.sessID = NewSessionID()
-		cookie := http.Cookie{Name: mng.cookieName, Value: ins.sessID, Expires: (time.Now().Add(time.Duration(mng.maxLifeTime) * time.Second))}
-		http.SetCookie(w, &cookie)
-		ins.SetProvider(&FileProvider{filename: "../tmp/sess_" + ins.sessID})
-		//delete session when time expires
-		go func() {
-			time.AfterFunc(time.Duration(mng.maxLifeTime)*time.Second, func() { ins.provider.EraseByExpiration() })
-		}()
-
+		_ = time.AfterFunc(time.Duration(mng.maxLifeTime)*time.Second, func() { _ = ins.provider.EraseByExpiration() })
+		return
 	}
+
+	ins.sessID = cookie.Value
+	ins.SetProvider(&FileProvider{filename: generateSessFilename(ins.sessID)})
 
 	return
 }
@@ -69,32 +71,17 @@ func (ins *Instance) SetProvider(p Provider) {
 }
 
 func (ins *Instance) Set(key string, value interface{}) error {
-	err := ins.provider.Save(key, value)
-
-	if err != nil {
-		log.Println(err)
-	}
-
-	return err
+	return errors.Wrap(ins.provider.Save(key, value), "cannot save value")
 }
 
 func (ins *Instance) Delete(key string) error {
-	err := ins.provider.Delete(key)
 
-	if err != nil {
-		log.Println(err)
-	}
-
-	return err
+	return errors.Wrap(ins.provider.Delete(key), "cannot delete value")
 }
 
 func (ins *Instance) Get(key string) (value interface{}, err error) {
 	value, err = ins.provider.Read(key)
-
-	if err != nil {
-		log.Println(err)
-	}
-
+	err = errors.Wrap(err, "cannot read value")
 	return
 }
 

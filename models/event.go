@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 )
@@ -43,6 +42,9 @@ type EventSystemMessage struct {
 }
 
 func (db *DB) OccupiedPlacesInEvent() (eventRow []EventPlacesRow, err error) {
+	if db.Error != nil {
+		return nil, db.Error
+	}
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places where isBooked = 1 OR isBought = 1"
 	event, err := queryEvent(sqlStatement, db)
 	eventRow = event.EventPlacesRows
@@ -50,6 +52,9 @@ func (db *DB) OccupiedPlacesInEvent() (eventRow []EventPlacesRow, err error) {
 }
 
 func (db *DB) AllPlacesInEvent() (event EventPlacesTemplate, err error) {
+	if db.Error != nil {
+		return event, db.Error
+	}
 	sqlStatement := "select placeIdentity, isBooked, isBought, userId, eventId from event_places"
 	event, err = queryEvent(sqlStatement, db)
 	event.UserInfo = make(map[string]string)
@@ -80,7 +85,6 @@ func queryEvent(sqlStatement string, db *DB) (EventPlacesTemplate, error) {
 	err = rows.Err()
 
 	if err != nil {
-		log.Fatal(err)
 		return templateRows, err
 	}
 
@@ -89,7 +93,9 @@ func queryEvent(sqlStatement string, db *DB) (EventPlacesTemplate, error) {
 
 func (db *DB) ProcessPlace(places *EventPlaces, user string) (StatusCode, error) {
 	var sqlStatement string
-
+	if db.Error != nil {
+		return 1, db.Error
+	}
 	switch places.Action {
 	case "buy":
 		sqlStatement = "UPDATE event_places set isBought = 1, isBooked = 0 WHERE placeIdentity = ?"

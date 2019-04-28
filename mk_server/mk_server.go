@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/Diminho/MK_practice/app"
 	"github.com/Diminho/MK_practice/models"
@@ -33,24 +33,21 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func NewServer(app *app.App) {
-
+func NewServer(ctx context.Context, app *app.App) {
+	ctx, cancel := context.WithCancel(ctx)
 	wApp := &WraperApp{app}
 
 	s := &http.Server{Addr: ":8000", Handler: LoadRoutes(wApp)}
 
 	go wApp.handlePlaceBookings()
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	go func() {
 		wApp.Slog.Info("Server running on port :8000")
 
 		if err := s.ListenAndServe(); err != http.ErrServerClosed {
 			wApp.Slog.Error(err)
-			cancel()
-
 		}
+		cancel()
 	}()
 	var gracefulShut = make(chan os.Signal, 1)
 	signal.Notify(gracefulShut, os.Interrupt, syscall.SIGTERM)
@@ -65,30 +62,29 @@ func NewServer(app *app.App) {
 }
 
 func (wApp *WraperApp) graceful(ctx context.Context, hs *http.Server, slog *simplelog.Log) {
-	for event := range wApp.EventClients {
-		for _, client := range wApp.EventClients[event] {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	for _, events := range wApp.EventClients {
+		for _, client := range events {
 			if err := client.Close(); err != nil {
 				slog.Error(err)
 			}
 		}
-		delete(wApp.EventClients, event)
 	}
 
 	if err := hs.Shutdown(ctx); err != nil {
 		slog.Error(err)
 	}
-	app.RemoveContents("./tmp/")
+
+	close(wApp.Broadcast)
+	app.RemoveContents(os.TempDir())
 
 	slog.Info("Server stopped")
 }
 
 func LoadRoutes(wApp *WraperApp) http.Handler {
-	absSrvRootDir, err := filepath.Abs(wApp.SrvRootDir)
-	if err != nil {
-		wApp.Slog.Error(err)
-	}
-	//need this assignemt since wApp.AbsSrvRootDir is used in application
-	wApp.AbsSrvRootDir = absSrvRootDir
+
 	fs := http.FileServer(http.Dir(wApp.AbsSrvRootDir))
 	mux := http.NewServeMux()
 	mux.Handle("/", fs)
@@ -213,7 +209,7 @@ func (wApp *WraperApp) handleEvent(w http.ResponseWriter, r *http.Request) {
 		tmplData.UserInfo["id"] = user.ID
 	}
 
-	app.PopulateTemplate(tmplData, w, fmt.Sprintf("%s/event.html", wApp.AbsSrvRootDir))
+	app.PopulateTemplate(wApp.Tmpl, tmplData, w, "event")
 }
 
 func (wApp *WraperApp) handleConnections(w http.ResponseWriter, r *http.Request) {
